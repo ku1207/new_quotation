@@ -90,6 +90,34 @@ interface DetailKeywordRow {
   cost: number
 }
 
+// 예산 기반 분석 타입
+interface DowngradeCandidate {
+  keyword: string
+  fromRank: number
+  toRank: number
+  deltaClicks: number
+  deltaCost: number
+  lps: number
+}
+
+interface OptimizationResult {
+  keyword: string
+  optimalRank: number
+  impr: number
+  clicks: number
+  ctr: number
+  cpc: number
+  cost: number
+}
+
+interface BudgetInsights {
+  budget_efficiency: string
+  channel_strategy: string
+  core_keywords: string
+  downgrade_pattern: string
+  action_items: string
+}
+
 export default function Page1() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [analysisMode, setAnalysisMode] = useState<string>('')
@@ -107,6 +135,15 @@ export default function Page1() {
   const [aggregatedByRank, setAggregatedByRank] = useState<AggregatedRankData | null>(null)
   const [scenarioMatrix, setScenarioMatrix] = useState<ScenarioItem[]>([])
   const [detailKeywordData, setDetailKeywordData] = useState<DetailKeywordRow[]>([])
+
+  // 예산 기반 분석 상태
+  const [pcOptimizationResult, setPcOptimizationResult] = useState<OptimizationResult[] | null>(
+    null
+  )
+  const [mobileOptimizationResult, setMobileOptimizationResult] = useState<
+    OptimizationResult[] | null
+  >(null)
+  const [budgetInsights, setBudgetInsights] = useState<BudgetInsights | null>(null)
 
   // 분석 방식 변경 핸들러 (상태 초기화)
   const handleAnalysisModeChange = (mode: string) => {
@@ -278,7 +315,8 @@ export default function Page1() {
     return { keywords }
   }
 
-  // 예산 기반으로 최적 순위 찾기
+  // 예산 기반으로 최적 순위 찾기 (순위 기반 분석용 - 모든 키워드 동일 순위)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const findOptimalRankByBudget = (
     keywords: KeywordData[],
     device: 'PC' | 'Mobile',
@@ -311,62 +349,267 @@ export default function Page1() {
     ).rank
   }
 
+  // Greedy Downgrade 알고리즘 (예산 기반 분석용 - 키워드별 최적 순위)
+  const optimizeBudgetGreedy = (
+    keywords: KeywordData[],
+    device: 'PC' | 'Mobile',
+    budget: number
+  ): OptimizationResult[] => {
+    const maxRank = device === 'PC' ? 10 : 5
+
+    // 1. 모든 키워드를 rank=1로 초기화
+    const currentRanks: Record<string, number> = {}
+    keywords.forEach((kw) => {
+      currentRanks[kw.keyword] = 1
+    })
+
+    // 2. 현재 총 비용 계산 함수
+    const calculateTotalCost = (): number => {
+      let total = 0
+      for (const kw of keywords) {
+        const rank = currentRanks[kw.keyword]
+        const deviceData = device === 'PC' ? kw.PC : kw.Mobile
+        const data = deviceData.find((d) => d.rank === rank)
+        if (data) total += data.cost
+      }
+      return total
+    }
+
+    // 3. 예산 초과 시 다운그레이드 반복
+    while (calculateTotalCost() > budget) {
+      // 다운그레이드 후보 생성
+      const candidates: DowngradeCandidate[] = []
+
+      for (const kw of keywords) {
+        const currentRank = currentRanks[kw.keyword]
+        if (currentRank >= maxRank) continue // 이미 최하위 순위
+
+        const deviceData = device === 'PC' ? kw.PC : kw.Mobile
+        const currentData = deviceData.find((d) => d.rank === currentRank)
+        const nextData = deviceData.find((d) => d.rank === currentRank + 1)
+
+        if (!currentData || !nextData) continue
+
+        const deltaClicks = currentData.clicks - nextData.clicks
+        const deltaCost = currentData.cost - nextData.cost
+
+        if (deltaCost <= 0) continue // 비용이 오히려 증가하는 경우 제외
+
+        const lps = deltaCost > 0 ? deltaClicks / deltaCost : Infinity
+
+        candidates.push({
+          keyword: kw.keyword,
+          fromRank: currentRank,
+          toRank: currentRank + 1,
+          deltaClicks,
+          deltaCost,
+          lps,
+        })
+      }
+
+      if (candidates.length === 0) break // 더 이상 다운그레이드 불가능
+
+      // Tie-break 규칙으로 정렬
+      candidates.sort((a, b) => {
+        // 1. ΔK_down이 0인 경우 최우선 (클릭 손실 없이 비용만 절감)
+        if (a.deltaClicks === 0 && b.deltaClicks !== 0) return -1
+        if (a.deltaClicks !== 0 && b.deltaClicks === 0) return 1
+
+        // 2. LPS가 낮은 순 (효율적인 다운그레이드)
+        if (Math.abs(a.lps - b.lps) > 0.0001) return a.lps - b.lps
+
+        // 3. ΔC_down이 큰 순 (절감 비용이 큰 순)
+        if (a.deltaCost !== b.deltaCost) return b.deltaCost - a.deltaCost
+
+        // 4. ToRank가 큰 순 (하위 순위로 많이 내려가는 순)
+        return b.toRank - a.toRank
+      })
+
+      // 가장 효율적인 후보를 다운그레이드
+      const best = candidates[0]
+      currentRanks[best.keyword] = best.toRank
+    }
+
+    // 4. 최종 결과 생성
+    const results: OptimizationResult[] = []
+    for (const kw of keywords) {
+      const optimalRank = currentRanks[kw.keyword]
+      const deviceData = device === 'PC' ? kw.PC : kw.Mobile
+      const data = deviceData.find((d) => d.rank === optimalRank)
+
+      if (data) {
+        results.push({
+          keyword: kw.keyword,
+          optimalRank,
+          impr: data.impr,
+          clicks: data.clicks,
+          ctr: data.impr > 0 ? (data.clicks / data.impr) * 100 : 0,
+          cpc: data.clicks > 0 ? Math.round(data.cost / data.clicks) : 0,
+          cost: data.cost,
+        })
+      }
+    }
+
+    return results
+  }
+
+  // Claude API 호출하여 인사이트 생성
+  const generateInsights = async (
+    pcResults: OptimizationResult[],
+    mobileResults: OptimizationResult[],
+    pcBudget: number,
+    mobileBudget: number
+  ): Promise<BudgetInsights | null> => {
+    try {
+      // PC 총계 계산
+      const pcTotal: {
+        impr: number
+        clicks: number
+        cost: number
+        ctr?: number
+        cpc?: number
+      } = {
+        impr: pcResults.reduce((sum, r) => sum + r.impr, 0),
+        clicks: pcResults.reduce((sum, r) => sum + r.clicks, 0),
+        cost: pcResults.reduce((sum, r) => sum + r.cost, 0),
+      }
+      pcTotal.ctr = pcTotal.impr > 0 ? (pcTotal.clicks / pcTotal.impr) * 100 : 0
+      pcTotal.cpc = pcTotal.clicks > 0 ? Math.round(pcTotal.cost / pcTotal.clicks) : 0
+
+      // Mobile 총계 계산
+      const mobileTotal: {
+        impr: number
+        clicks: number
+        cost: number
+        ctr?: number
+        cpc?: number
+      } = {
+        impr: mobileResults.reduce((sum, r) => sum + r.impr, 0),
+        clicks: mobileResults.reduce((sum, r) => sum + r.clicks, 0),
+        cost: mobileResults.reduce((sum, r) => sum + r.cost, 0),
+      }
+      mobileTotal.ctr = mobileTotal.impr > 0 ? (mobileTotal.clicks / mobileTotal.impr) * 100 : 0
+      mobileTotal.cpc = mobileTotal.clicks > 0 ? Math.round(mobileTotal.cost / mobileTotal.clicks) : 0
+
+      // 1위 유지된 키워드 찾기
+      const pcRank1 = pcResults.filter((r) => r.optimalRank === 1)
+      const mobileRank1 = mobileResults.filter((r) => r.optimalRank === 1)
+
+      // API 요청 데이터 구성
+      const requestData = {
+        pc: {
+          budget: pcBudget,
+          spent: pcTotal.cost,
+          utilization: (pcTotal.cost / pcBudget) * 100,
+          total: pcTotal,
+          rank1Keywords: pcRank1.length,
+          keywords: pcResults,
+        },
+        mobile: {
+          budget: mobileBudget,
+          spent: mobileTotal.cost,
+          utilization: (mobileTotal.cost / mobileBudget) * 100,
+          total: mobileTotal,
+          rank1Keywords: mobileRank1.length,
+          keywords: mobileResults,
+        },
+        combined: {
+          totalBudget: pcBudget + mobileBudget,
+          totalSpent: pcTotal.cost + mobileTotal.cost,
+          totalClicks: pcTotal.clicks + mobileTotal.clicks,
+          totalImpr: pcTotal.impr + mobileTotal.impr,
+        },
+      }
+
+      const response = await fetch('/api/generate-insights', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData),
+      })
+
+      if (!response.ok) {
+        console.error('Insights API error:', await response.text())
+        return null
+      }
+
+      const data = await response.json()
+      return data.insights
+    } catch (error) {
+      console.error('Failed to generate insights:', error)
+      return null
+    }
+  }
+
   // 분석 수행
-  const handleAnalyze = () => {
+  const handleAnalyze = async () => {
     if (!parsedData) {
       toast.error('파일을 먼저 업로드해주세요.')
       return
     }
 
-    // 분석 방식별 입력값 검증
-    let finalPcRank: number
-    let finalMobileRank: number
-
     if (analysisMode === '견적 기반') {
-      const pcBudgetNum = parseInt(pcBudget)
-      const mobileBudgetNum = parseInt(mobileBudget)
-
-      if (!pcBudget || !mobileBudget || pcBudgetNum <= 0 || mobileBudgetNum <= 0) {
-        toast.error('유효한 예산을 입력해주세요.')
-        return
-      }
-
-      // 예산 기반으로 최적 순위 찾기
-      const optimalPcRank = findOptimalRankByBudget(parsedData.keywords, 'PC', pcBudgetNum)
-      const optimalMobileRank = findOptimalRankByBudget(
-        parsedData.keywords,
-        'Mobile',
-        mobileBudgetNum
-      )
-
-      if (optimalPcRank === null) {
-        toast.error('PC 예산이 부족합니다. 최소 순위의 비용보다 높은 예산을 입력해주세요.')
-        return
-      }
-
-      if (optimalMobileRank === null) {
-        toast.error(
-          'Mobile 예산이 부족합니다. 최소 순위의 비용보다 높은 예산을 입력해주세요.'
-        )
-        return
-      }
-
-      finalPcRank = optimalPcRank
-      finalMobileRank = optimalMobileRank
-
-      toast.success(`PC ${finalPcRank}순위, Mobile ${finalMobileRank}순위가 선택되었습니다.`)
+      // 예산 기반 분석 (Greedy Downgrade)
+      await handleBudgetBasedAnalysis()
     } else if (analysisMode === '순위 기반') {
-      if (!pcRank || !mobileRank) {
-        toast.error('PC 순위와 Mobile 순위를 선택해주세요.')
-        return
-      }
-
-      finalPcRank = parseInt(pcRank)
-      finalMobileRank = parseInt(mobileRank)
+      // 기존 순위 기반 분석
+      handleRankBasedAnalysis()
     } else {
       toast.error('분석 방식을 선택해주세요.')
+    }
+  }
+
+  // 예산 기반 분석 (Greedy Downgrade)
+  const handleBudgetBasedAnalysis = async () => {
+    if (!parsedData) return
+
+    const pcBudgetNum = parseInt(pcBudget)
+    const mobileBudgetNum = parseInt(mobileBudget)
+
+    if (!pcBudget || !mobileBudget || pcBudgetNum <= 0 || mobileBudgetNum <= 0) {
+      toast.error('유효한 예산을 입력해주세요.')
       return
     }
+
+    setIsAnalyzing(true)
+
+    try {
+      // Greedy Downgrade 알고리즘 실행
+      const pcResults = optimizeBudgetGreedy(parsedData.keywords, 'PC', pcBudgetNum)
+      const mobileResults = optimizeBudgetGreedy(parsedData.keywords, 'Mobile', mobileBudgetNum)
+
+      setPcOptimizationResult(pcResults)
+      setMobileOptimizationResult(mobileResults)
+
+      // 인사이트 생성
+      const insights = await generateInsights(pcResults, mobileResults, pcBudgetNum, mobileBudgetNum)
+      if (insights) {
+        setBudgetInsights(insights)
+      } else {
+        toast.warning('인사이트 생성에 실패했습니다. (분석 결과는 정상적으로 생성되었습니다)')
+      }
+
+      toast.success('예산 기반 분석이 완료되었습니다.')
+    } catch (error) {
+      console.error('예산 기반 분석 오류:', error)
+      toast.error('분석 중 오류가 발생했습니다.')
+    } finally {
+      setIsAnalyzing(false)
+    }
+  }
+
+  // 순위 기반 분석 (기존 로직)
+  const handleRankBasedAnalysis = () => {
+    if (!parsedData) return
+
+    if (!pcRank || !mobileRank) {
+      toast.error('PC 순위와 Mobile 순위를 선택해주세요.')
+      return
+    }
+
+    const finalPcRank = parseInt(pcRank)
+    const finalMobileRank = parseInt(mobileRank)
 
     setIsAnalyzing(true)
 
@@ -549,8 +792,289 @@ export default function Page1() {
     }
   }
 
-  // 분석 결과를 엑셀로 다운로드 (3개 시트)
+  // 다운로드 분기 처리
   const handleDownloadAnalysis = () => {
+    if (analysisMode === '견적 기반') {
+      handleDownloadBudgetAnalysis()
+    } else if (analysisMode === '순위 기반') {
+      handleDownloadRankAnalysis()
+    } else {
+      toast.error('분석 방식을 먼저 선택해주세요.')
+    }
+  }
+
+  // 예산 기반 분석 결과를 엑셀로 다운로드 (4개 시트)
+  const handleDownloadBudgetAnalysis = async () => {
+    if (!pcOptimizationResult || !mobileOptimizationResult || !parsedData || !uploadedFile) {
+      toast.error('분석 결과가 없습니다.')
+      return
+    }
+
+    try {
+      const pcBudgetNum = parseInt(pcBudget)
+      const mobileBudgetNum = parseInt(mobileBudget)
+
+      // PC 총계 계산
+      const pcTotal = {
+        impr: pcOptimizationResult.reduce((sum, r) => sum + r.impr, 0),
+        clicks: pcOptimizationResult.reduce((sum, r) => sum + r.clicks, 0),
+        cost: pcOptimizationResult.reduce((sum, r) => sum + r.cost, 0),
+      }
+      const pcCtr = pcTotal.impr > 0 ? (pcTotal.clicks / pcTotal.impr) * 100 : 0
+      const pcCpc = pcTotal.clicks > 0 ? Math.round(pcTotal.cost / pcTotal.clicks) : 0
+
+      // Mobile 총계 계산
+      const mobileTotal = {
+        impr: mobileOptimizationResult.reduce((sum, r) => sum + r.impr, 0),
+        clicks: mobileOptimizationResult.reduce((sum, r) => sum + r.clicks, 0),
+        cost: mobileOptimizationResult.reduce((sum, r) => sum + r.cost, 0),
+      }
+      const mobileCtr = mobileTotal.impr > 0 ? (mobileTotal.clicks / mobileTotal.impr) * 100 : 0
+      const mobileCpc = mobileTotal.clicks > 0 ? Math.round(mobileTotal.cost / mobileTotal.clicks) : 0
+
+      const workbook = XLSX.utils.book_new()
+
+      // ========== 시트 1: 01_Insight_Summary ==========
+      const sheet1Data: (string | number)[][] = []
+
+      // KPI 요약 테이블
+      sheet1Data.push(['KPI 요약'])
+      sheet1Data.push(['구분', '설정 예산', '소진 비용', '활용률(%)', '노출수', '클릭수', 'CTR', 'CPC', '광고비'])
+      sheet1Data.push([
+        'PC',
+        pcBudgetNum,
+        pcTotal.cost,
+        (pcTotal.cost / pcBudgetNum) * 100,
+        pcTotal.impr,
+        pcTotal.clicks,
+        pcCtr / 100,
+        pcCpc,
+        pcTotal.cost,
+      ])
+      sheet1Data.push([
+        'Mobile',
+        mobileBudgetNum,
+        mobileTotal.cost,
+        (mobileTotal.cost / mobileBudgetNum) * 100,
+        mobileTotal.impr,
+        mobileTotal.clicks,
+        mobileCtr / 100,
+        mobileCpc,
+        mobileTotal.cost,
+      ])
+      sheet1Data.push([
+        '합계',
+        pcBudgetNum + mobileBudgetNum,
+        pcTotal.cost + mobileTotal.cost,
+        ((pcTotal.cost + mobileTotal.cost) / (pcBudgetNum + mobileBudgetNum)) * 100,
+        pcTotal.impr + mobileTotal.impr,
+        pcTotal.clicks + mobileTotal.clicks,
+        pcTotal.impr + mobileTotal.impr > 0
+          ? ((pcTotal.clicks + mobileTotal.clicks) / (pcTotal.impr + mobileTotal.impr)) * 100
+          : 0,
+        pcTotal.clicks + mobileTotal.clicks > 0
+          ? Math.round((pcTotal.cost + mobileTotal.cost) / (pcTotal.clicks + mobileTotal.clicks))
+          : 0,
+        pcTotal.cost + mobileTotal.cost,
+      ])
+
+      // 2행 띄우기
+      sheet1Data.push([])
+      sheet1Data.push([])
+
+      // 인사이트 영역
+      if (budgetInsights) {
+        sheet1Data.push(['인사이트'])
+        sheet1Data.push([])
+        sheet1Data.push(['예산 효율성 평가'])
+        sheet1Data.push([budgetInsights.budget_efficiency])
+        sheet1Data.push([])
+        sheet1Data.push(['매체별 전략 방향'])
+        sheet1Data.push([budgetInsights.channel_strategy])
+        sheet1Data.push([])
+        sheet1Data.push(['핵심 키워드 분석'])
+        sheet1Data.push([budgetInsights.core_keywords])
+        sheet1Data.push([])
+        sheet1Data.push(['다운그레이드 패턴'])
+        sheet1Data.push([budgetInsights.downgrade_pattern])
+        sheet1Data.push([])
+        sheet1Data.push(['액션 아이템'])
+        sheet1Data.push([budgetInsights.action_items])
+      } else {
+        sheet1Data.push(['인사이트'])
+        sheet1Data.push(['인사이트 생성에 실패했습니다.'])
+      }
+
+      const ws1 = XLSX.utils.aoa_to_sheet(sheet1Data)
+      ws1['!gridlines'] = false
+      ws1['!cols'] = [
+        { wch: 12 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 10 },
+        { wch: 10 },
+        { wch: 15 },
+      ]
+
+      // 숫자 포맷 적용
+      for (let i = 2; i <= 4; i++) {
+        // KPI 테이블 데이터 행
+        // CTR (컬럼 F, 인덱스 6)
+        const ctrCell = XLSX.utils.encode_cell({ r: i, c: 6 })
+        if (ws1[ctrCell]) ws1[ctrCell].z = '0.00%'
+
+        // 활용률 (컬럼 D, 인덱스 3)
+        const utilizationCell = XLSX.utils.encode_cell({ r: i, c: 3 })
+        if (ws1[utilizationCell]) ws1[utilizationCell].z = '0.00%'
+
+        // 숫자 포맷 (예산, 비용, 노출수, 클릭수, CPC, 광고비)
+        for (const col of [1, 2, 4, 5, 7, 8]) {
+          const cell = XLSX.utils.encode_cell({ r: i, c: col })
+          if (ws1[cell]) ws1[cell].z = '#,##0'
+        }
+      }
+
+      XLSX.utils.book_append_sheet(workbook, ws1, '01_Insight_Summary')
+
+      // ========== 시트 2: 02_Budget_Optimizer_PC ==========
+      const sheet2Data: (string | number)[][] = []
+      sheet2Data.push(['PC 예산 최적화 결과'])
+      sheet2Data.push(['키워드', '최적 순위', '노출수', '클릭수', 'CTR', 'CPC', '광고비'])
+
+      // 합계 행
+      sheet2Data.push(['합계', '-', pcTotal.impr, pcTotal.clicks, pcCtr / 100, pcCpc, pcTotal.cost])
+
+      // 키워드별 데이터 (광고비 내림차순 정렬)
+      const sortedPcResults = [...pcOptimizationResult].sort((a, b) => b.cost - a.cost)
+      for (const row of sortedPcResults) {
+        sheet2Data.push([
+          row.keyword,
+          row.optimalRank,
+          row.impr,
+          row.clicks,
+          row.ctr / 100,
+          row.cpc,
+          row.cost,
+        ])
+      }
+
+      const ws2 = XLSX.utils.aoa_to_sheet(sheet2Data)
+      ws2['!gridlines'] = false
+      ws2['!cols'] = [
+        { wch: 25 },
+        { wch: 12 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 10 },
+        { wch: 10 },
+        { wch: 15 },
+      ]
+
+      // 숫자 포맷
+      for (let i = 2; i < sheet2Data.length; i++) {
+        // CTR
+        const ctrCell = XLSX.utils.encode_cell({ r: i, c: 4 })
+        if (ws2[ctrCell]) ws2[ctrCell].z = '0.00%'
+
+        // 숫자 포맷
+        for (const col of [2, 3, 5, 6]) {
+          const cell = XLSX.utils.encode_cell({ r: i, c: col })
+          if (ws2[cell]) ws2[cell].z = '#,##0'
+        }
+      }
+
+      XLSX.utils.book_append_sheet(workbook, ws2, '02_Budget_Optimizer_PC')
+
+      // ========== 시트 3: 03_Budget_Optimizer_Mobile ==========
+      const sheet3Data: (string | number)[][] = []
+      sheet3Data.push(['Mobile 예산 최적화 결과'])
+      sheet3Data.push(['키워드', '최적 순위', '노출수', '클릭수', 'CTR', 'CPC', '광고비'])
+
+      // 합계 행
+      sheet3Data.push(['합계', '-', mobileTotal.impr, mobileTotal.clicks, mobileCtr / 100, mobileCpc, mobileTotal.cost])
+
+      // 키워드별 데이터 (광고비 내림차순 정렬)
+      const sortedMobileResults = [...mobileOptimizationResult].sort((a, b) => b.cost - a.cost)
+      for (const row of sortedMobileResults) {
+        sheet3Data.push([
+          row.keyword,
+          row.optimalRank,
+          row.impr,
+          row.clicks,
+          row.ctr / 100,
+          row.cpc,
+          row.cost,
+        ])
+      }
+
+      const ws3 = XLSX.utils.aoa_to_sheet(sheet3Data)
+      ws3['!gridlines'] = false
+      ws3['!cols'] = [
+        { wch: 25 },
+        { wch: 12 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 10 },
+        { wch: 10 },
+        { wch: 15 },
+      ]
+
+      // 숫자 포맷
+      for (let i = 2; i < sheet3Data.length; i++) {
+        // CTR
+        const ctrCell = XLSX.utils.encode_cell({ r: i, c: 4 })
+        if (ws3[ctrCell]) ws3[ctrCell].z = '0.00%'
+
+        // 숫자 포맷
+        for (const col of [2, 3, 5, 6]) {
+          const cell = XLSX.utils.encode_cell({ r: i, c: col })
+          if (ws3[cell]) ws3[cell].z = '#,##0'
+        }
+      }
+
+      XLSX.utils.book_append_sheet(workbook, ws3, '03_Budget_Optimizer_Mobile')
+
+      // ========== 시트 4: 04_Raw_Wide ==========
+      // 원본 파일을 읽어서 그대로 추가
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        try {
+          const data = e.target?.result
+          const originalWorkbook = XLSX.read(data, { type: 'binary' })
+          const originalSheetName = originalWorkbook.SheetNames[0]
+          const originalSheet = originalWorkbook.Sheets[originalSheetName]
+
+          // 그리드라인 제거
+          originalSheet['!gridlines'] = false
+
+          XLSX.utils.book_append_sheet(workbook, originalSheet, '04_Raw_Wide')
+
+          // 파일 다운로드
+          const fileName = `예산기반_분석결과_${new Date().toISOString().split('T')[0]}.xlsx`
+          XLSX.writeFile(workbook, fileName)
+          toast.success('분석 결과가 다운로드되었습니다.')
+        } catch (error) {
+          console.error('원본 파일 읽기 오류:', error)
+          toast.error('원본 파일을 읽는 중 오류가 발생했습니다.')
+        }
+      }
+
+      reader.onerror = () => {
+        toast.error('원본 파일을 읽는 중 오류가 발생했습니다.')
+      }
+
+      reader.readAsBinaryString(uploadedFile)
+    } catch (error) {
+      console.error('다운로드 오류:', error)
+      toast.error('다운로드 중 오류가 발생했습니다.')
+    }
+  }
+
+  // 순위 기반 분석 결과를 엑셀로 다운로드 (3개 시트)
+  const handleDownloadRankAnalysis = () => {
     if (!analysisResult || !aggregatedByRank || scenarioMatrix.length === 0) {
       toast.error('분석 결과가 없습니다.')
       return
@@ -902,6 +1426,11 @@ export default function Page1() {
         parseInt(pcBudget) > 0 &&
         parseInt(mobileBudget) > 0))
 
+  // 다운로드 버튼 활성화 여부
+  const isDownloadEnabled =
+    (analysisMode === '순위 기반' && analysisResult !== null) ||
+    (analysisMode === '견적 기반' && pcOptimizationResult !== null && mobileOptimizationResult !== null)
+
   return (
     <div className="min-h-[calc(100vh-65px)] p-8 bg-gray-50">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -1066,7 +1595,7 @@ export default function Page1() {
               </Button>
               <Button
                 onClick={handleDownloadAnalysis}
-                disabled={!analysisResult}
+                disabled={!isDownloadEnabled}
                 variant="outline"
                 className="flex-1"
                 size="lg"
