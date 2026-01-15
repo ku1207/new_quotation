@@ -54,6 +54,41 @@ interface AnalysisResult {
   keywords: AnalysisKeywordResult[]
 }
 
+// 새로운 타입 정의
+interface RankMetrics {
+  impr: number
+  clicks: number
+  cost: number
+  ctr: number
+  cpc: number
+}
+
+interface AggregatedRankData {
+  PC: Record<number, RankMetrics>
+  Mobile: Record<number, RankMetrics>
+}
+
+interface ScenarioItem {
+  pcRank: number
+  mobileRank: number
+  impr: number
+  clicks: number
+  cost: number
+  ctr: number
+  cpc: number
+}
+
+interface DetailKeywordRow {
+  keyword: string
+  device: string
+  rank: string
+  impr: number
+  clicks: number
+  ctr: number
+  cpc: number
+  cost: number
+}
+
 export default function Page1() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [pcRank, setPcRank] = useState<string>('')
@@ -63,6 +98,11 @@ export default function Page1() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // 새로운 상태 추가
+  const [aggregatedByRank, setAggregatedByRank] = useState<AggregatedRankData | null>(null)
+  const [scenarioMatrix, setScenarioMatrix] = useState<ScenarioItem[]>([])
+  const [detailKeywordData, setDetailKeywordData] = useState<DetailKeywordRow[]>([])
 
   // 파일 드래그 앤 드롭 핸들러
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -234,6 +274,7 @@ export default function Page1() {
       const pcRankNum = parseInt(pcRank)
       const mobileRankNum = parseInt(mobileRank)
 
+      // 1. 기존 분석 로직 (유지)
       const analysisKeywords: AnalysisKeywordResult[] = []
       let totalClicks = 0
       let totalCost = 0
@@ -272,6 +313,130 @@ export default function Page1() {
       }
 
       setAnalysisResult(result)
+
+      // 2. rank별 디바이스별 데이터 합산
+      const aggregated: AggregatedRankData = {
+        PC: {},
+        Mobile: {},
+      }
+
+      // PC 1-10위 초기화
+      for (let rank = 1; rank <= 10; rank++) {
+        aggregated.PC[rank] = { impr: 0, clicks: 0, cost: 0, ctr: 0, cpc: 0 }
+      }
+
+      // Mobile 1-5위 초기화
+      for (let rank = 1; rank <= 5; rank++) {
+        aggregated.Mobile[rank] = { impr: 0, clicks: 0, cost: 0, ctr: 0, cpc: 0 }
+      }
+
+      // 각 키워드 데이터를 순회하면서 합산
+      for (const keywordData of parsedData.keywords) {
+        // PC 데이터 합산
+        for (const pcData of keywordData.PC) {
+          if (pcData.rank >= 1 && pcData.rank <= 10) {
+            aggregated.PC[pcData.rank].impr += pcData.impr
+            aggregated.PC[pcData.rank].clicks += pcData.clicks
+            aggregated.PC[pcData.rank].cost += pcData.cost
+          }
+        }
+
+        // Mobile 데이터 합산
+        for (const mobileData of keywordData.Mobile) {
+          if (mobileData.rank >= 1 && mobileData.rank <= 5) {
+            aggregated.Mobile[mobileData.rank].impr += mobileData.impr
+            aggregated.Mobile[mobileData.rank].clicks += mobileData.clicks
+            aggregated.Mobile[mobileData.rank].cost += mobileData.cost
+          }
+        }
+      }
+
+      // CTR과 CPC 계산
+      for (let rank = 1; rank <= 10; rank++) {
+        const pcMetrics = aggregated.PC[rank]
+        pcMetrics.ctr = pcMetrics.impr > 0 ? (pcMetrics.clicks / pcMetrics.impr) * 100 : 0
+        pcMetrics.cpc = pcMetrics.clicks > 0 ? Math.round(pcMetrics.cost / pcMetrics.clicks) : 0
+      }
+
+      for (let rank = 1; rank <= 5; rank++) {
+        const mobileMetrics = aggregated.Mobile[rank]
+        mobileMetrics.ctr =
+          mobileMetrics.impr > 0 ? (mobileMetrics.clicks / mobileMetrics.impr) * 100 : 0
+        mobileMetrics.cpc =
+          mobileMetrics.clicks > 0 ? Math.round(mobileMetrics.cost / mobileMetrics.clicks) : 0
+      }
+
+      setAggregatedByRank(aggregated)
+
+      // 3. 50가지 조합 생성 (PC 1-10 x Mobile 1-5)
+      const scenarios: ScenarioItem[] = []
+
+      for (let pcRank = 1; pcRank <= 10; pcRank++) {
+        for (let mobileRank = 1; mobileRank <= 5; mobileRank++) {
+          const pcMetrics = aggregated.PC[pcRank]
+          const mobileMetrics = aggregated.Mobile[mobileRank]
+
+          const combinedImpr = pcMetrics.impr + mobileMetrics.impr
+          const combinedClicks = pcMetrics.clicks + mobileMetrics.clicks
+          const combinedCost = pcMetrics.cost + mobileMetrics.cost
+
+          const combinedCtr = combinedImpr > 0 ? (combinedClicks / combinedImpr) * 100 : 0
+          const combinedCpc = combinedClicks > 0 ? Math.round(combinedCost / combinedClicks) : 0
+
+          scenarios.push({
+            pcRank,
+            mobileRank,
+            impr: combinedImpr,
+            clicks: combinedClicks,
+            cost: combinedCost,
+            ctr: combinedCtr,
+            cpc: combinedCpc,
+          })
+        }
+      }
+
+      setScenarioMatrix(scenarios)
+
+      // 4. 상세 키워드 데이터 생성
+      const detailRows: DetailKeywordRow[] = []
+
+      for (const keywordData of parsedData.keywords) {
+        // PC 데이터 추가
+        const pcData = keywordData.PC.find((d) => d.rank === pcRankNum)
+        if (pcData) {
+          detailRows.push({
+            keyword: keywordData.keyword,
+            device: 'PC',
+            rank: pcRankNum.toString(),
+            impr: pcData.impr,
+            clicks: pcData.clicks,
+            ctr: pcData.impr > 0 ? (pcData.clicks / pcData.impr) * 100 : 0,
+            cpc: pcData.clicks > 0 ? Math.round(pcData.cost / pcData.clicks) : 0,
+            cost: pcData.cost,
+          })
+        }
+
+        // Mobile 데이터 추가
+        const mobileData = keywordData.Mobile.find((d) => d.rank === mobileRankNum)
+        if (mobileData) {
+          detailRows.push({
+            keyword: keywordData.keyword,
+            device: 'Mobile',
+            rank: mobileRankNum.toString(),
+            impr: mobileData.impr,
+            clicks: mobileData.clicks,
+            ctr: mobileData.impr > 0 ? (mobileData.clicks / mobileData.impr) * 100 : 0,
+            cpc: mobileData.clicks > 0 ? Math.round(mobileData.cost / mobileData.clicks) : 0,
+            cost: mobileData.cost,
+          })
+        }
+      }
+
+      // 광고비(cost) 내림차순 정렬
+      detailRows.sort((a, b) => b.cost - a.cost)
+
+      setDetailKeywordData(detailRows)
+
       toast.success('분석이 완료되었습니다.')
     } catch (error) {
       console.error('분석 오류:', error)
@@ -281,49 +446,340 @@ export default function Page1() {
     }
   }
 
-  // 분석 결과를 엑셀로 다운로드
+  // 분석 결과를 엑셀로 다운로드 (3개 시트)
   const handleDownloadAnalysis = () => {
-    if (!analysisResult) {
+    if (!analysisResult || !aggregatedByRank || scenarioMatrix.length === 0) {
       toast.error('분석 결과가 없습니다.')
       return
     }
 
     try {
-      const worksheetData: (string | number)[][] = [
-        [
-          '키워드',
-          'PC 순위',
-          'PC 클릭수',
-          'PC 광고비용',
-          'Mobile 순위',
-          'Mobile 클릭수',
-          'Mobile 광고비용',
-          '총 클릭수',
-          '총 광고비용',
-          '평균 CPC',
-        ],
+      const pcRankNum = parseInt(pcRank)
+      const mobileRankNum = parseInt(mobileRank)
+
+      // 사용자가 선택한 조합 찾기
+      const selectedScenario = scenarioMatrix.find(
+        (s) => s.pcRank === pcRankNum && s.mobileRank === mobileRankNum
+      )
+
+      if (!selectedScenario) {
+        toast.error('선택한 조합을 찾을 수 없습니다.')
+        return
+      }
+
+      // 최대/최소 조합 찾기
+      const maxImprScenario = scenarioMatrix.reduce((prev, current) =>
+        current.impr > prev.impr ? current : prev
+      )
+      const maxClicksScenario = scenarioMatrix.reduce((prev, current) =>
+        current.clicks > prev.clicks ? current : prev
+      )
+      const maxCtrScenario = scenarioMatrix.reduce((prev, current) =>
+        current.ctr > prev.ctr ? current : prev
+      )
+      const minCpcScenario = scenarioMatrix.reduce((prev, current) =>
+        current.cpc < prev.cpc ? current : prev
+      )
+      const minCostScenario = scenarioMatrix.reduce((prev, current) =>
+        current.cost < prev.cost ? current : prev
+      )
+
+      const workbook = XLSX.utils.book_new()
+
+      // ========== 시트 1: 01_Insight_Summary ==========
+      const sheet1Data: (string | number)[][] = []
+
+      // 테이블 1: 목표 순위 지표
+      sheet1Data.push(['목표 순위 지표'])
+      sheet1Data.push(['PC Rank', 'Mobile Rank', '노출수', '클릭수', 'CTR', 'CPC', '광고비'])
+      sheet1Data.push([
+        pcRankNum,
+        mobileRankNum,
+        selectedScenario.impr,
+        selectedScenario.clicks,
+        selectedScenario.ctr / 100, // 퍼센트를 소수로 변환
+        selectedScenario.cpc,
+        selectedScenario.cost,
+      ])
+
+      // 2행 띄우기
+      sheet1Data.push([])
+      sheet1Data.push([])
+
+      // 테이블 2: 분석
+      sheet1Data.push(['분석'])
+      sheet1Data.push(['PC Rank', 'Mobile Rank', '노출수', '클릭수', 'CTR', 'CPC', '광고비', '비고'])
+      sheet1Data.push([
+        selectedScenario.pcRank,
+        selectedScenario.mobileRank,
+        selectedScenario.impr,
+        selectedScenario.clicks,
+        selectedScenario.ctr / 100,
+        selectedScenario.cpc,
+        selectedScenario.cost,
+        '목표 순위',
+      ])
+      sheet1Data.push([
+        maxImprScenario.pcRank,
+        maxImprScenario.mobileRank,
+        maxImprScenario.impr,
+        maxImprScenario.clicks,
+        maxImprScenario.ctr / 100,
+        maxImprScenario.cpc,
+        maxImprScenario.cost,
+        '최대 노출수',
+      ])
+      sheet1Data.push([
+        maxClicksScenario.pcRank,
+        maxClicksScenario.mobileRank,
+        maxClicksScenario.impr,
+        maxClicksScenario.clicks,
+        maxClicksScenario.ctr / 100,
+        maxClicksScenario.cpc,
+        maxClicksScenario.cost,
+        '최대 클릭수',
+      ])
+      sheet1Data.push([
+        maxCtrScenario.pcRank,
+        maxCtrScenario.mobileRank,
+        maxCtrScenario.impr,
+        maxCtrScenario.clicks,
+        maxCtrScenario.ctr / 100,
+        maxCtrScenario.cpc,
+        maxCtrScenario.cost,
+        '최대 CTR',
+      ])
+      sheet1Data.push([
+        minCpcScenario.pcRank,
+        minCpcScenario.mobileRank,
+        minCpcScenario.impr,
+        minCpcScenario.clicks,
+        minCpcScenario.ctr / 100,
+        minCpcScenario.cpc,
+        minCpcScenario.cost,
+        '최소 CPC',
+      ])
+      sheet1Data.push([
+        minCostScenario.pcRank,
+        minCostScenario.mobileRank,
+        minCostScenario.impr,
+        minCostScenario.clicks,
+        minCostScenario.ctr / 100,
+        minCostScenario.cpc,
+        minCostScenario.cost,
+        '최소 광고비',
+      ])
+
+      // 2행 띄우기
+      sheet1Data.push([])
+      sheet1Data.push([])
+
+      // 테이블 3: 인사이트
+      const pcOnlyMetrics = aggregatedByRank.PC[pcRankNum]
+      const mobileOnlyMetrics = aggregatedByRank.Mobile[mobileRankNum]
+
+      sheet1Data.push(['인사이트'])
+      sheet1Data.push(['디바이스 효율 비교'])
+      sheet1Data.push([
+        `PC만 (${pcRankNum}순위): 노출수 ${Math.round(
+          pcOnlyMetrics.impr
+        ).toLocaleString()}, 클릭수 ${Math.round(
+          pcOnlyMetrics.clicks
+        ).toLocaleString()}, CTR ${pcOnlyMetrics.ctr.toFixed(2)}%, CPC ${Math.round(
+          pcOnlyMetrics.cpc
+        ).toLocaleString()}원, 광고비 ${Math.round(pcOnlyMetrics.cost).toLocaleString()}원`,
+      ])
+      sheet1Data.push([
+        `Mobile만 (${mobileRankNum}순위): 노출수 ${Math.round(
+          mobileOnlyMetrics.impr
+        ).toLocaleString()}, 클릭수 ${Math.round(
+          mobileOnlyMetrics.clicks
+        ).toLocaleString()}, CTR ${mobileOnlyMetrics.ctr.toFixed(2)}%, CPC ${Math.round(
+          mobileOnlyMetrics.cpc
+        ).toLocaleString()}원, 광고비 ${Math.round(mobileOnlyMetrics.cost).toLocaleString()}원`,
+      ])
+      sheet1Data.push([
+        `PC+Mobile 조합: 노출수 ${Math.round(
+          selectedScenario.impr
+        ).toLocaleString()}, 클릭수 ${Math.round(
+          selectedScenario.clicks
+        ).toLocaleString()}, CTR ${selectedScenario.ctr.toFixed(2)}%, CPC ${Math.round(
+          selectedScenario.cpc
+        ).toLocaleString()}원, 광고비 ${Math.round(selectedScenario.cost).toLocaleString()}원`,
+      ])
+
+      const ws1 = XLSX.utils.aoa_to_sheet(sheet1Data)
+      ws1['!gridlines'] = false
+      ws1['!cols'] = [
+        { wch: 12 },
+        { wch: 14 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 10 },
+        { wch: 10 },
+        { wch: 15 },
+        { wch: 15 },
       ]
 
-      for (const keyword of analysisResult.keywords) {
-        worksheetData.push([
-          keyword.keyword,
-          keyword.pcData ? keyword.pcData.rank : '-',
-          keyword.pcData ? keyword.pcData.clicks : 0,
-          keyword.pcData ? keyword.pcData.cost : 0,
-          keyword.mobileData ? keyword.mobileData.rank : '-',
-          keyword.mobileData ? keyword.mobileData.clicks : 0,
-          keyword.mobileData ? keyword.mobileData.cost : 0,
-          keyword.totalClicks,
-          keyword.totalCost,
-          Math.round(keyword.avgCPC),
+      // 셀 병합 (인사이트 섹션)
+      ws1['!merges'] = [
+        // 인사이트 제목 (A-G 병합)
+        { s: { r: sheet1Data.length - 5, c: 0 }, e: { r: sheet1Data.length - 5, c: 6 } },
+        // 디바이스 효율 비교 헤더 (A-G 병합)
+        { s: { r: sheet1Data.length - 4, c: 0 }, e: { r: sheet1Data.length - 4, c: 6 } },
+        // PC만 (A-G 병합)
+        { s: { r: sheet1Data.length - 3, c: 0 }, e: { r: sheet1Data.length - 3, c: 6 } },
+        // Mobile만 (A-G 병합)
+        { s: { r: sheet1Data.length - 2, c: 0 }, e: { r: sheet1Data.length - 2, c: 6 } },
+        // PC+Mobile (A-G 병합)
+        { s: { r: sheet1Data.length - 1, c: 0 }, e: { r: sheet1Data.length - 1, c: 6 } },
+      ]
+
+      // CTR 퍼센트 포맷 적용
+      for (let i = 2; i < sheet1Data.length; i++) {
+        if (sheet1Data[i][4] !== undefined && typeof sheet1Data[i][4] === 'number') {
+          const cellAddress = XLSX.utils.encode_cell({ r: i, c: 4 })
+          if (ws1[cellAddress]) {
+            ws1[cellAddress].z = '0.00%'
+          }
+        }
+      }
+
+      // 숫자 포맷 적용 (노출수, 클릭수, CPC, 광고비)
+      for (let i = 2; i < sheet1Data.length; i++) {
+        for (const col of [2, 3, 5, 6]) {
+          if (sheet1Data[i][col] !== undefined && typeof sheet1Data[i][col] === 'number') {
+            const cellAddress = XLSX.utils.encode_cell({ r: i, c: col })
+            if (ws1[cellAddress]) {
+              ws1[cellAddress].z = '#,##0'
+            }
+          }
+        }
+      }
+
+      XLSX.utils.book_append_sheet(workbook, ws1, '01_Insight_Summary')
+
+      // ========== 시트 2: 02_Scenario_Matrix ==========
+      const sheet2Data: (string | number)[][] = []
+      sheet2Data.push(['조합표'])
+      sheet2Data.push(['PC Rank', 'Mobile Rank', '노출수', '클릭수', 'CTR', 'CPC', '광고비'])
+
+      for (const scenario of scenarioMatrix) {
+        sheet2Data.push([
+          scenario.pcRank,
+          scenario.mobileRank,
+          scenario.impr,
+          scenario.clicks,
+          scenario.ctr / 100,
+          scenario.cpc,
+          scenario.cost,
         ])
       }
 
-      const worksheet = XLSX.utils.aoa_to_sheet(worksheetData)
-      const workbook = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(workbook, worksheet, '분석 결과')
+      const ws2 = XLSX.utils.aoa_to_sheet(sheet2Data)
+      ws2['!gridlines'] = false
+      ws2['!cols'] = [
+        { wch: 12 },
+        { wch: 14 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 10 },
+        { wch: 10 },
+        { wch: 15 },
+      ]
 
-      XLSX.writeFile(workbook, `분석결과_${new Date().toISOString().split('T')[0]}.xlsx`)
+      // CTR 퍼센트 포맷
+      for (let i = 2; i < sheet2Data.length; i++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: i, c: 4 })
+        if (ws2[cellAddress]) {
+          ws2[cellAddress].z = '0.00%'
+        }
+      }
+
+      // 숫자 포맷 (노출수, 클릭수, CPC, 광고비)
+      for (let i = 2; i < sheet2Data.length; i++) {
+        for (const col of [2, 3, 5, 6]) {
+          const cellAddress = XLSX.utils.encode_cell({ r: i, c: col })
+          if (ws2[cellAddress]) {
+            ws2[cellAddress].z = '#,##0'
+          }
+        }
+      }
+
+      XLSX.utils.book_append_sheet(workbook, ws2, '02_Scenario_Matrix')
+
+      // ========== 시트 3: 03_Target_Detail ==========
+      const sheet3Data: (string | number)[][] = []
+      sheet3Data.push(['상세 키워드 데이터'])
+      sheet3Data.push(['키워드', '디바이스', '지정 순위', '노출수', '클릭수', 'CTR', 'CPC', '광고비'])
+
+      // 총합 행 계산
+      let totalImpr = 0
+      let totalClicks = 0
+      let totalCost = 0
+
+      for (const row of detailKeywordData) {
+        totalImpr += row.impr
+        totalClicks += row.clicks
+        totalCost += row.cost
+      }
+
+      const totalCtr = totalImpr > 0 ? (totalClicks / totalImpr) * 100 : 0
+      const totalCpc = totalClicks > 0 ? Math.round(totalCost / totalClicks) : 0
+
+      // 총합 행 추가
+      sheet3Data.push(['총합', '-', '-', totalImpr, totalClicks, totalCtr / 100, totalCpc, totalCost])
+
+      // 상세 데이터 추가
+      for (const row of detailKeywordData) {
+        sheet3Data.push([
+          row.keyword,
+          row.device,
+          row.rank,
+          row.impr,
+          row.clicks,
+          row.ctr / 100,
+          row.cpc,
+          row.cost,
+        ])
+      }
+
+      const ws3 = XLSX.utils.aoa_to_sheet(sheet3Data)
+      ws3['!gridlines'] = false
+      ws3['!cols'] = [
+        { wch: 20 },
+        { wch: 10 },
+        { wch: 12 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 10 },
+        { wch: 10 },
+        { wch: 15 },
+      ]
+
+      // CTR 퍼센트 포맷
+      for (let i = 2; i < sheet3Data.length; i++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: i, c: 5 })
+        if (ws3[cellAddress]) {
+          ws3[cellAddress].z = '0.00%'
+        }
+      }
+
+      // 숫자 포맷 (노출수, 클릭수, CPC, 광고비)
+      for (let i = 2; i < sheet3Data.length; i++) {
+        for (const col of [3, 4, 6, 7]) {
+          const cellAddress = XLSX.utils.encode_cell({ r: i, c: col })
+          if (ws3[cellAddress]) {
+            ws3[cellAddress].z = '#,##0'
+          }
+        }
+      }
+
+      XLSX.utils.book_append_sheet(workbook, ws3, '03_Target_Detail')
+
+      // 파일 다운로드
+      const fileName = `분석결과_${new Date().toISOString().split('T')[0]}.xlsx`
+      XLSX.writeFile(workbook, fileName)
       toast.success('분석 결과가 다운로드되었습니다.')
     } catch (error) {
       console.error('다운로드 오류:', error)
