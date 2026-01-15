@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -10,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Upload, Download, FileSpreadsheet, X } from 'lucide-react'
+import { Upload, Download, FileSpreadsheet, X, BarChart3 } from 'lucide-react'
 import { toast } from 'react-toastify'
 import * as XLSX from 'xlsx'
 
@@ -91,8 +92,11 @@ interface DetailKeywordRow {
 
 export default function Page1() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
+  const [analysisMode, setAnalysisMode] = useState<string>('')
   const [pcRank, setPcRank] = useState<string>('')
   const [mobileRank, setMobileRank] = useState<string>('')
+  const [pcBudget, setPcBudget] = useState<string>('')
+  const [mobileBudget, setMobileBudget] = useState<string>('')
   const [parsedData, setParsedData] = useState<ParsedData | null>(null)
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -103,6 +107,19 @@ export default function Page1() {
   const [aggregatedByRank, setAggregatedByRank] = useState<AggregatedRankData | null>(null)
   const [scenarioMatrix, setScenarioMatrix] = useState<ScenarioItem[]>([])
   const [detailKeywordData, setDetailKeywordData] = useState<DetailKeywordRow[]>([])
+
+  // 분석 방식 변경 핸들러 (상태 초기화)
+  const handleAnalysisModeChange = (mode: string) => {
+    setAnalysisMode(mode)
+    // 관련 상태 초기화
+    if (mode === '견적 기반') {
+      setPcRank('')
+      setMobileRank('')
+    } else if (mode === '순위 기반') {
+      setPcBudget('')
+      setMobileBudget('')
+    }
+  }
 
   // 파일 드래그 앤 드롭 핸들러
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -261,27 +278,107 @@ export default function Page1() {
     return { keywords }
   }
 
+  // 예산 기반으로 최적 순위 찾기
+  const findOptimalRankByBudget = (
+    keywords: KeywordData[],
+    device: 'PC' | 'Mobile',
+    budget: number
+  ): number | null => {
+    // 각 순위별 총 비용 계산
+    const maxRank = device === 'PC' ? 10 : 5
+    const rankCosts: { rank: number; totalCost: number }[] = []
+
+    for (let rank = 1; rank <= maxRank; rank++) {
+      let totalCost = 0
+      for (const keyword of keywords) {
+        const deviceData = device === 'PC' ? keyword.PC : keyword.Mobile
+        const rankData = deviceData.find((d) => d.rank === rank)
+        if (rankData) {
+          totalCost += rankData.cost
+        }
+      }
+      rankCosts.push({ rank, totalCost })
+    }
+
+    // 예산 이하면서 비용이 가장 높은 순위 찾기 (높은 순위일수록 비용이 많이 듦)
+    // 1순위가 가장 비싸고, 순위가 낮을수록 저렴함
+    const validRanks = rankCosts.filter((r) => r.totalCost <= budget)
+    if (validRanks.length === 0) return null
+
+    // 가장 높은 비용의 순위 선택 (가장 높은 순위)
+    return validRanks.reduce((prev, current) =>
+      current.totalCost > prev.totalCost ? current : prev
+    ).rank
+  }
+
   // 분석 수행
   const handleAnalyze = () => {
-    if (!parsedData || !pcRank || !mobileRank) {
-      toast.error('모든 정보를 입력해주세요.')
+    if (!parsedData) {
+      toast.error('파일을 먼저 업로드해주세요.')
+      return
+    }
+
+    // 분석 방식별 입력값 검증
+    let finalPcRank: number
+    let finalMobileRank: number
+
+    if (analysisMode === '견적 기반') {
+      const pcBudgetNum = parseInt(pcBudget)
+      const mobileBudgetNum = parseInt(mobileBudget)
+
+      if (!pcBudget || !mobileBudget || pcBudgetNum <= 0 || mobileBudgetNum <= 0) {
+        toast.error('유효한 예산을 입력해주세요.')
+        return
+      }
+
+      // 예산 기반으로 최적 순위 찾기
+      const optimalPcRank = findOptimalRankByBudget(parsedData.keywords, 'PC', pcBudgetNum)
+      const optimalMobileRank = findOptimalRankByBudget(
+        parsedData.keywords,
+        'Mobile',
+        mobileBudgetNum
+      )
+
+      if (optimalPcRank === null) {
+        toast.error('PC 예산이 부족합니다. 최소 순위의 비용보다 높은 예산을 입력해주세요.')
+        return
+      }
+
+      if (optimalMobileRank === null) {
+        toast.error(
+          'Mobile 예산이 부족합니다. 최소 순위의 비용보다 높은 예산을 입력해주세요.'
+        )
+        return
+      }
+
+      finalPcRank = optimalPcRank
+      finalMobileRank = optimalMobileRank
+
+      toast.success(`PC ${finalPcRank}순위, Mobile ${finalMobileRank}순위가 선택되었습니다.`)
+    } else if (analysisMode === '순위 기반') {
+      if (!pcRank || !mobileRank) {
+        toast.error('PC 순위와 Mobile 순위를 선택해주세요.')
+        return
+      }
+
+      finalPcRank = parseInt(pcRank)
+      finalMobileRank = parseInt(mobileRank)
+    } else {
+      toast.error('분석 방식을 선택해주세요.')
       return
     }
 
     setIsAnalyzing(true)
 
     try {
-      const pcRankNum = parseInt(pcRank)
-      const mobileRankNum = parseInt(mobileRank)
-
       // 1. 기존 분석 로직 (유지)
       const analysisKeywords: AnalysisKeywordResult[] = []
       let totalClicks = 0
       let totalCost = 0
 
       for (const keywordData of parsedData.keywords) {
-        const pcData = keywordData.PC.find((d) => d.rank === pcRankNum) || null
-        const mobileData = keywordData.Mobile.find((d) => d.rank === mobileRankNum) || null
+        const pcData = keywordData.PC.find((d) => d.rank === finalPcRank) || null
+        const mobileData = keywordData.Mobile.find((d) => d.rank === finalMobileRank) || null
 
         const keywordClicks = (pcData?.clicks || 0) + (mobileData?.clicks || 0)
         const keywordCost = (pcData?.cost || 0) + (mobileData?.cost || 0)
@@ -313,6 +410,12 @@ export default function Page1() {
       }
 
       setAnalysisResult(result)
+
+      // 견적 기반 분석인 경우, 선택된 순위를 상태에 저장
+      if (analysisMode === '견적 기반') {
+        setPcRank(finalPcRank.toString())
+        setMobileRank(finalMobileRank.toString())
+      }
 
       // 2. rank별 디바이스별 데이터 합산
       const aggregated: AggregatedRankData = {
@@ -402,12 +505,12 @@ export default function Page1() {
 
       for (const keywordData of parsedData.keywords) {
         // PC 데이터 추가
-        const pcData = keywordData.PC.find((d) => d.rank === pcRankNum)
+        const pcData = keywordData.PC.find((d) => d.rank === finalPcRank)
         if (pcData) {
           detailRows.push({
             keyword: keywordData.keyword,
             device: 'PC',
-            rank: pcRankNum.toString(),
+            rank: finalPcRank.toString(),
             impr: pcData.impr,
             clicks: pcData.clicks,
             ctr: pcData.impr > 0 ? (pcData.clicks / pcData.impr) * 100 : 0,
@@ -417,12 +520,12 @@ export default function Page1() {
         }
 
         // Mobile 데이터 추가
-        const mobileData = keywordData.Mobile.find((d) => d.rank === mobileRankNum)
+        const mobileData = keywordData.Mobile.find((d) => d.rank === finalMobileRank)
         if (mobileData) {
           detailRows.push({
             keyword: keywordData.keyword,
             device: 'Mobile',
-            rank: mobileRankNum.toString(),
+            rank: finalMobileRank.toString(),
             impr: mobileData.impr,
             clicks: mobileData.clicks,
             ctr: mobileData.impr > 0 ? (mobileData.clicks / mobileData.impr) * 100 : 0,
@@ -788,7 +891,16 @@ export default function Page1() {
   }
 
   // 분석 버튼 활성화 여부
-  const isAnalyzeEnabled = uploadedFile && parsedData && pcRank && mobileRank && !isAnalyzing
+  const isAnalyzeEnabled =
+    uploadedFile &&
+    parsedData &&
+    !isAnalyzing &&
+    ((analysisMode === '순위 기반' && pcRank && mobileRank) ||
+      (analysisMode === '견적 기반' &&
+        pcBudget &&
+        mobileBudget &&
+        parseInt(pcBudget) > 0 &&
+        parseInt(mobileBudget) > 0))
 
   return (
     <div className="min-h-[calc(100vh-65px)] p-8 bg-gray-50">
@@ -796,53 +908,100 @@ export default function Page1() {
         <div>
           <h1 className="text-3xl font-bold mb-2">대량견적 결과 파일 분석</h1>
           <p className="text-gray-600">
-            엑셀 파일을 업로드하고 분석할 순위를 선택하여 결과를 확인하세요.
+            엑셀 파일을 업로드하고 분석 방식을 선택하여 결과를 확인하세요.
           </p>
         </div>
 
-        {/* 부가정보 입력 영역 */}
-        <Card>
+        {/* 분석 방식 선택 영역 */}
+        <Card className="border-l-4 border-l-indigo-500">
           <CardHeader>
-            <CardTitle>부가정보 입력</CardTitle>
+            <CardTitle>분석 방식 선택</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">PC 순위</label>
-                <Select value={pcRank} onValueChange={setPcRank}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="PC 순위 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((rank) => (
-                      <SelectItem key={rank} value={rank.toString()}>
-                        {rank}순위
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Mobile 순위</label>
-                <Select value={mobileRank} onValueChange={setMobileRank}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Mobile 순위 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {[1, 2, 3, 4, 5].map((rank) => (
-                      <SelectItem key={rank} value={rank.toString()}>
-                        {rank}순위
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+            <Select value={analysisMode} onValueChange={handleAnalysisModeChange}>
+              <SelectTrigger>
+                <SelectValue placeholder="분석 방식을 선택하세요" />
+              </SelectTrigger>
+              <SelectContent className="bg-white">
+                <SelectItem value="견적 기반">견적 기반</SelectItem>
+                <SelectItem value="순위 기반">순위 기반</SelectItem>
+              </SelectContent>
+            </Select>
           </CardContent>
         </Card>
 
+        {/* 부가정보 입력 영역 - 조건부 렌더링 */}
+        {analysisMode && (
+          <Card className="border-l-4 border-l-blue-500">
+            <CardHeader>
+              <CardTitle>부가정보 입력</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {analysisMode === '견적 기반' ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">PC 예산 (원)</label>
+                    <Input
+                      type="number"
+                      step="1"
+                      value={pcBudget}
+                      onChange={(e) => setPcBudget(e.target.value)}
+                      placeholder="PC 예산을 입력하세요"
+                      min="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Mobile 예산 (원)</label>
+                    <Input
+                      type="number"
+                      step="1"
+                      value={mobileBudget}
+                      onChange={(e) => setMobileBudget(e.target.value)}
+                      placeholder="Mobile 예산을 입력하세요"
+                      min="0"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">PC 순위</label>
+                    <Select value={pcRank} onValueChange={setPcRank}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="PC 순위 선택" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white">
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((rank) => (
+                          <SelectItem key={rank} value={rank.toString()}>
+                            {rank}순위
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Mobile 순위</label>
+                    <Select value={mobileRank} onValueChange={setMobileRank}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Mobile 순위 선택" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white">
+                        {[1, 2, 3, 4, 5].map((rank) => (
+                          <SelectItem key={rank} value={rank.toString()}>
+                            {rank}순위
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {/* 파일 업로드 영역 */}
-        <Card>
+        <Card className="border-l-4 border-l-green-500">
           <CardHeader>
             <CardTitle>파일 업로드</CardTitle>
           </CardHeader>
@@ -892,15 +1051,17 @@ export default function Page1() {
         </Card>
 
         {/* 버튼 영역 */}
-        <Card>
+        <Card className="border-l-4 border-l-purple-500">
           <CardContent className="pt-6">
             <div className="flex gap-4">
               <Button
                 onClick={handleAnalyze}
                 disabled={!isAnalyzeEnabled}
+                variant="outline"
                 className="flex-1"
                 size="lg"
               >
+                <BarChart3 className="w-4 h-4 mr-2" />
                 {isAnalyzing ? '분석 중...' : '분석'}
               </Button>
               <Button
@@ -917,46 +1078,9 @@ export default function Page1() {
           </CardContent>
         </Card>
 
-        {/* 분석 결과 요약 */}
-        {analysisResult && (
-          <Card>
-            <CardHeader>
-              <CardTitle>분석 결과 요약</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-1">총 키워드 수</p>
-                  <p className="text-2xl font-bold text-blue-600">
-                    {analysisResult.summary.totalKeywords.toLocaleString()}
-                  </p>
-                </div>
-                <div className="p-4 bg-green-50 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-1">총 예상 클릭수</p>
-                  <p className="text-2xl font-bold text-green-600">
-                    {Math.round(analysisResult.summary.totalClicks).toLocaleString()}
-                  </p>
-                </div>
-                <div className="p-4 bg-purple-50 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-1">총 예상 광고비용</p>
-                  <p className="text-2xl font-bold text-purple-600">
-                    {Math.round(analysisResult.summary.totalCost).toLocaleString()}원
-                  </p>
-                </div>
-                <div className="p-4 bg-orange-50 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-1">평균 CPC</p>
-                  <p className="text-2xl font-bold text-orange-600">
-                    {Math.round(analysisResult.summary.avgCPC).toLocaleString()}원
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
         {/* JSON 미리보기 영역 */}
         {parsedData && (
-          <Card>
+          <Card className="border-l-4 border-l-orange-500">
             <CardHeader>
               <CardTitle>JSON 미리보기 (처음 200행)</CardTitle>
             </CardHeader>
