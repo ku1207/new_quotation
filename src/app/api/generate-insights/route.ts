@@ -50,7 +50,7 @@ ${JSON.stringify(body, null, 2)}
 
     const message = await anthropic.messages.create({
       model: 'claude-opus-4-5-20251101',
-      max_tokens: 1024,
+      max_tokens: 5000,
       messages: [
         {
           role: 'user',
