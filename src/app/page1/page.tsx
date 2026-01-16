@@ -844,7 +844,7 @@ export default function Page1() {
         'PC',
         pcBudgetNum,
         pcTotal.cost,
-        (pcTotal.cost / pcBudgetNum) * 100,
+        pcTotal.cost / pcBudgetNum, // 활용률: 소진 비용 / 설정 예산 (퍼센트 포맷이 자동으로 *100)
         pcTotal.impr,
         pcTotal.clicks,
         pcCtr / 100,
@@ -855,7 +855,7 @@ export default function Page1() {
         'Mobile',
         mobileBudgetNum,
         mobileTotal.cost,
-        (mobileTotal.cost / mobileBudgetNum) * 100,
+        mobileTotal.cost / mobileBudgetNum, // 활용률: 소진 비용 / 설정 예산
         mobileTotal.impr,
         mobileTotal.clicks,
         mobileCtr / 100,
@@ -866,11 +866,11 @@ export default function Page1() {
         '합계',
         pcBudgetNum + mobileBudgetNum,
         pcTotal.cost + mobileTotal.cost,
-        ((pcTotal.cost + mobileTotal.cost) / (pcBudgetNum + mobileBudgetNum)) * 100,
+        (pcTotal.cost + mobileTotal.cost) / (pcBudgetNum + mobileBudgetNum), // 활용률: 소진 비용 / 설정 예산
         pcTotal.impr + mobileTotal.impr,
         pcTotal.clicks + mobileTotal.clicks,
         pcTotal.impr + mobileTotal.impr > 0
-          ? ((pcTotal.clicks + mobileTotal.clicks) / (pcTotal.impr + mobileTotal.impr)) * 100
+          ? (pcTotal.clicks + mobileTotal.clicks) / (pcTotal.impr + mobileTotal.impr)
           : 0,
         pcTotal.clicks + mobileTotal.clicks > 0
           ? Math.round((pcTotal.cost + mobileTotal.cost) / (pcTotal.clicks + mobileTotal.clicks))
