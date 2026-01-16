@@ -1445,7 +1445,7 @@ export default function Page1() {
         </div>
 
         {/* 분석 방식 선택 영역 */}
-        <Card className="border-l-4 border-l-indigo-500">
+        <Card className="bg-indigo-50/50">
           <CardHeader>
             <CardTitle>분석 방식 선택</CardTitle>
           </CardHeader>
@@ -1464,7 +1464,7 @@ export default function Page1() {
 
         {/* 부가정보 입력 영역 - 조건부 렌더링 */}
         {analysisMode && (
-          <Card className="border-l-4 border-l-blue-500">
+          <Card className="bg-blue-50/50">
             <CardHeader>
               <CardTitle>부가정보 입력</CardTitle>
             </CardHeader>
@@ -1533,7 +1533,7 @@ export default function Page1() {
         )}
 
         {/* 파일 업로드 영역 */}
-        <Card className="border-l-4 border-l-green-500">
+        <Card className="bg-green-50/50">
           <CardHeader>
             <CardTitle>파일 업로드</CardTitle>
           </CardHeader>
@@ -1583,7 +1583,7 @@ export default function Page1() {
         </Card>
 
         {/* 버튼 영역 */}
-        <Card className="border-l-4 border-l-purple-500">
+        <Card className="bg-purple-50/50">
           <CardContent className="pt-6">
             <div className="flex gap-4">
               <Button
@@ -1609,28 +1609,6 @@ export default function Page1() {
             </div>
           </CardContent>
         </Card>
-
-        {/* JSON 미리보기 영역 */}
-        {parsedData && (
-          <Card className="border-l-4 border-l-orange-500">
-            <CardHeader>
-              <CardTitle>JSON 미리보기 (처음 200행)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-auto max-h-[500px]">
-                <pre className="text-sm">
-                  {JSON.stringify(
-                    {
-                      keywords: parsedData.keywords.slice(0, 200),
-                    },
-                    null,
-                    2
-                  )}
-                </pre>
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </div>
     </div>
   )
