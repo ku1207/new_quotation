@@ -586,11 +586,19 @@ export default function Page1() {
       const insights = await generateInsights(pcResults, mobileResults, pcBudgetNum, mobileBudgetNum)
       if (insights) {
         setBudgetInsights(insights)
+        toast.success('예산 기반 분석이 완료되었습니다.')
       } else {
+        // AI 인사이트 생성 실패 시 기본 메시지 설정
+        setBudgetInsights({
+          budget_efficiency: '인사이트 생성에 실패했습니다.',
+          channel_strategy: '인사이트 생성에 실패했습니다.',
+          core_keywords: '인사이트 생성에 실패했습니다.',
+          downgrade_pattern: '인사이트 생성에 실패했습니다.',
+          action_items: '인사이트 생성에 실패했습니다.',
+        })
         toast.warning('인사이트 생성에 실패했습니다. (분석 결과는 정상적으로 생성되었습니다)')
+        toast.success('예산 기반 분석이 완료되었습니다.')
       }
-
-      toast.success('예산 기반 분석이 완료되었습니다.')
     } catch (error) {
       console.error('예산 기반 분석 오류:', error)
       toast.error('분석 중 오류가 발생했습니다.')
@@ -844,7 +852,7 @@ export default function Page1() {
         'PC',
         pcBudgetNum,
         pcTotal.cost,
-        (pcTotal.cost / pcBudgetNum) * 100,
+        pcTotal.cost / pcBudgetNum, // 활용률: 소진 비용 / 설정 예산 (퍼센트 포맷이 자동으로 *100)
         pcTotal.impr,
         pcTotal.clicks,
         pcCtr / 100,
@@ -855,7 +863,7 @@ export default function Page1() {
         'Mobile',
         mobileBudgetNum,
         mobileTotal.cost,
-        (mobileTotal.cost / mobileBudgetNum) * 100,
+        mobileTotal.cost / mobileBudgetNum, // 활용률: 소진 비용 / 설정 예산
         mobileTotal.impr,
         mobileTotal.clicks,
         mobileCtr / 100,
@@ -866,11 +874,11 @@ export default function Page1() {
         '합계',
         pcBudgetNum + mobileBudgetNum,
         pcTotal.cost + mobileTotal.cost,
-        ((pcTotal.cost + mobileTotal.cost) / (pcBudgetNum + mobileBudgetNum)) * 100,
+        (pcTotal.cost + mobileTotal.cost) / (pcBudgetNum + mobileBudgetNum), // 활용률: 소진 비용 / 설정 예산
         pcTotal.impr + mobileTotal.impr,
         pcTotal.clicks + mobileTotal.clicks,
         pcTotal.impr + mobileTotal.impr > 0
-          ? ((pcTotal.clicks + mobileTotal.clicks) / (pcTotal.impr + mobileTotal.impr)) * 100
+          ? (pcTotal.clicks + mobileTotal.clicks) / (pcTotal.impr + mobileTotal.impr)
           : 0,
         pcTotal.clicks + mobileTotal.clicks > 0
           ? Math.round((pcTotal.cost + mobileTotal.cost) / (pcTotal.clicks + mobileTotal.clicks))
@@ -1429,7 +1437,10 @@ export default function Page1() {
   // 다운로드 버튼 활성화 여부
   const isDownloadEnabled =
     (analysisMode === '순위 기반' && analysisResult !== null) ||
-    (analysisMode === '견적 기반' && pcOptimizationResult !== null && mobileOptimizationResult !== null)
+    (analysisMode === '견적 기반' &&
+      pcOptimizationResult !== null &&
+      mobileOptimizationResult !== null &&
+      budgetInsights !== null)
 
   return (
     <div className="min-h-[calc(100vh-65px)] p-8 bg-gray-50">
@@ -1442,7 +1453,7 @@ export default function Page1() {
         </div>
 
         {/* 분석 방식 선택 영역 */}
-        <Card className="border-l-4 border-l-indigo-500">
+        <Card className="bg-indigo-50/50">
           <CardHeader>
             <CardTitle>분석 방식 선택</CardTitle>
           </CardHeader>
@@ -1461,7 +1472,7 @@ export default function Page1() {
 
         {/* 부가정보 입력 영역 - 조건부 렌더링 */}
         {analysisMode && (
-          <Card className="border-l-4 border-l-blue-500">
+          <Card className="bg-blue-50/50">
             <CardHeader>
               <CardTitle>부가정보 입력</CardTitle>
             </CardHeader>
@@ -1530,7 +1541,7 @@ export default function Page1() {
         )}
 
         {/* 파일 업로드 영역 */}
-        <Card className="border-l-4 border-l-green-500">
+        <Card className="bg-green-50/50">
           <CardHeader>
             <CardTitle>파일 업로드</CardTitle>
           </CardHeader>
@@ -1580,14 +1591,17 @@ export default function Page1() {
         </Card>
 
         {/* 버튼 영역 */}
-        <Card className="border-l-4 border-l-purple-500">
+        <Card className="bg-purple-50/50">
           <CardContent className="pt-6">
             <div className="flex gap-4">
               <Button
                 onClick={handleAnalyze}
                 disabled={!isAnalyzeEnabled}
-                variant="outline"
-                className="flex-1"
+                className={`flex-1 text-white ${
+                  !isAnalyzeEnabled
+                    ? 'bg-blue-300 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
                 size="lg"
               >
                 <BarChart3 className="w-4 h-4 mr-2" />
@@ -1596,8 +1610,11 @@ export default function Page1() {
               <Button
                 onClick={handleDownloadAnalysis}
                 disabled={!isDownloadEnabled}
-                variant="outline"
-                className="flex-1"
+                className={`flex-1 text-white ${
+                  !isDownloadEnabled
+                    ? 'bg-green-300 cursor-not-allowed'
+                    : 'bg-green-600 hover:bg-green-700'
+                }`}
                 size="lg"
               >
                 <Download className="w-4 h-4 mr-2" />
@@ -1606,28 +1623,6 @@ export default function Page1() {
             </div>
           </CardContent>
         </Card>
-
-        {/* JSON 미리보기 영역 */}
-        {parsedData && (
-          <Card className="border-l-4 border-l-orange-500">
-            <CardHeader>
-              <CardTitle>JSON 미리보기 (처음 200행)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-auto max-h-[500px]">
-                <pre className="text-sm">
-                  {JSON.stringify(
-                    {
-                      keywords: parsedData.keywords.slice(0, 200),
-                    },
-                    null,
-                    2
-                  )}
-                </pre>
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </div>
     </div>
   )

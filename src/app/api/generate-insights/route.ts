@@ -50,7 +50,7 @@ ${JSON.stringify(body, null, 2)}
 
     const message = await anthropic.messages.create({
       model: 'claude-opus-4-5-20251101',
-      max_tokens: 1024,
+      max_tokens: 5000,
       messages: [
         {
           role: 'user',
@@ -59,19 +59,58 @@ ${JSON.stringify(body, null, 2)}
       ],
     })
 
+    console.log('Claude API Response:', JSON.stringify(message, null, 2))
+
     const content = message.content[0]
     if (content.type === 'text') {
-      // JSON 추출
-      const jsonMatch = content.text.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        const insights = JSON.parse(jsonMatch[0])
-        return NextResponse.json({ insights })
+      console.log('Response text:', content.text)
+
+      // JSON 추출 - 더 robust하게 처리
+      try {
+        // 1. 중괄호로 감싸진 JSON 찾기
+        const jsonMatch = content.text.match(/\{[\s\S]*\}/g)
+        if (jsonMatch && jsonMatch.length > 0) {
+          // 가장 큰 JSON 객체 선택 (전체 응답일 가능성이 높음)
+          const largestJson = jsonMatch.reduce((a, b) => (a.length > b.length ? a : b))
+          const insights = JSON.parse(largestJson)
+
+          // 필수 필드 검증
+          if (
+            insights.budget_efficiency &&
+            insights.channel_strategy &&
+            insights.core_keywords &&
+            insights.downgrade_pattern &&
+            insights.action_items
+          ) {
+            console.log('Successfully parsed insights:', insights)
+            return NextResponse.json({ insights })
+          } else {
+            console.error('Missing required fields in insights:', insights)
+          }
+        }
+      } catch (parseError) {
+        console.error('JSON parsing error:', parseError)
+        console.error('Failed to parse text:', content.text)
       }
     }
 
-    return NextResponse.json({ error: 'Failed to generate insights' }, { status: 500 })
+    console.error('Failed to extract insights from response')
+    return NextResponse.json(
+      {
+        error: 'Failed to generate insights',
+        details: content.type === 'text' ? content.text : 'No text content'
+      },
+      { status: 500 }
+    )
   } catch (error) {
     console.error('Insights generation error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    return NextResponse.json(
+      {
+        error: 'Internal server error',
+        details: errorMessage
+      },
+      { status: 500 }
+    )
   }
 }
