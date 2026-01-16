@@ -1429,7 +1429,10 @@ export default function Page1() {
   // 다운로드 버튼 활성화 여부
   const isDownloadEnabled =
     (analysisMode === '순위 기반' && analysisResult !== null) ||
-    (analysisMode === '견적 기반' && pcOptimizationResult !== null && mobileOptimizationResult !== null)
+    (analysisMode === '견적 기반' &&
+      pcOptimizationResult !== null &&
+      mobileOptimizationResult !== null &&
+      budgetInsights !== null)
 
   return (
     <div className="min-h-[calc(100vh-65px)] p-8 bg-gray-50">
