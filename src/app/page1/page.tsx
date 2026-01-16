@@ -586,11 +586,19 @@ export default function Page1() {
       const insights = await generateInsights(pcResults, mobileResults, pcBudgetNum, mobileBudgetNum)
       if (insights) {
         setBudgetInsights(insights)
+        toast.success('예산 기반 분석이 완료되었습니다.')
       } else {
+        // AI 인사이트 생성 실패 시 기본 메시지 설정
+        setBudgetInsights({
+          budget_efficiency: '인사이트 생성에 실패했습니다.',
+          channel_strategy: '인사이트 생성에 실패했습니다.',
+          core_keywords: '인사이트 생성에 실패했습니다.',
+          downgrade_pattern: '인사이트 생성에 실패했습니다.',
+          action_items: '인사이트 생성에 실패했습니다.',
+        })
         toast.warning('인사이트 생성에 실패했습니다. (분석 결과는 정상적으로 생성되었습니다)')
+        toast.success('예산 기반 분석이 완료되었습니다.')
       }
-
-      toast.success('예산 기반 분석이 완료되었습니다.')
     } catch (error) {
       console.error('예산 기반 분석 오류:', error)
       toast.error('분석 중 오류가 발생했습니다.')
@@ -1589,8 +1597,11 @@ export default function Page1() {
               <Button
                 onClick={handleAnalyze}
                 disabled={!isAnalyzeEnabled}
-                variant="outline"
-                className="flex-1"
+                className={`flex-1 text-white ${
+                  !isAnalyzeEnabled
+                    ? 'bg-blue-300 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
                 size="lg"
               >
                 <BarChart3 className="w-4 h-4 mr-2" />
@@ -1599,8 +1610,11 @@ export default function Page1() {
               <Button
                 onClick={handleDownloadAnalysis}
                 disabled={!isDownloadEnabled}
-                variant="outline"
-                className="flex-1"
+                className={`flex-1 text-white ${
+                  !isDownloadEnabled
+                    ? 'bg-green-300 cursor-not-allowed'
+                    : 'bg-green-600 hover:bg-green-700'
+                }`}
                 size="lg"
               >
                 <Download className="w-4 h-4 mr-2" />
