@@ -28,6 +28,7 @@ interface KeywordRankData {
 
 interface KeywordData {
   keyword: string
+  category: string
   PC: KeywordRankData[]
   Mobile: KeywordRankData[]
 }
@@ -125,13 +126,17 @@ export default function Page1() {
   const [mobileRank, setMobileRank] = useState<string>('')
   const [pcBudget, setPcBudget] = useState<string>('')
   const [mobileBudget, setMobileBudget] = useState<string>('')
+  const [focusKeywordGroup, setFocusKeywordGroup] = useState<string>('')
+  const [excludeKeywordGroup, setExcludeKeywordGroup] = useState<string>('')
   const [parsedData, setParsedData] = useState<ParsedData | null>(null)
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [isCategorizing, setIsCategorizing] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // 숫자를 한글로 변환하는 함수
+  // 숫자를 한글로 변환하는 함수 (현재 미사용, 향후 사용 가능)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const numberToKorean = (num: number): string => {
     if (num === 0) return '0원'
 
@@ -165,6 +170,38 @@ export default function Page1() {
     }
 
     return result + '원'
+  }
+
+  // 숫자를 간결한 한글 금액으로 변환하는 함수
+  const formatKoreanCurrency = (num: number): string => {
+    if (num === 0) return '0원'
+
+    // 억 단위 (100000000 이상)
+    if (num >= 100000000) {
+      const eok = Math.floor(num / 100000000)
+      if (eok >= 1000) {
+        return `${eok.toLocaleString()}억원`
+      }
+      return `${eok}억원`
+    }
+
+    // 만 단위 (10000 이상)
+    if (num >= 10000) {
+      const man = Math.floor(num / 10000)
+      if (man >= 1000) {
+        return `${man.toLocaleString()}만원`
+      }
+      return `${man}만원`
+    }
+
+    // 천 단위 (1000 이상)
+    if (num >= 1000) {
+      const cheon = Math.floor(num / 1000)
+      return `${cheon}천원`
+    }
+
+    // 천 미만
+    return `${num}원`
   }
 
   // 숫자에 쉼표 추가
@@ -264,10 +301,10 @@ export default function Page1() {
   }
 
   // 엑셀 파일 파싱
-  const parseExcelFile = (file: File) => {
+  const parseExcelFile = async (file: File) => {
     const reader = new FileReader()
 
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const data = e.target?.result
         const workbook = XLSX.read(data, { type: 'binary' })
@@ -283,6 +320,9 @@ export default function Page1() {
         const parsed = parseExcelToJSON(jsonData)
         setParsedData(parsed)
         toast.success('파일이 성공적으로 파싱되었습니다.')
+
+        // 카테고리 분류 수행
+        await categorizeKeywords(parsed)
       } catch (error) {
         console.error('파일 파싱 오류:', error)
         toast.error('파일 파싱 중 오류가 발생했습니다.')
@@ -294,6 +334,62 @@ export default function Page1() {
     }
 
     reader.readAsBinaryString(file)
+  }
+
+  // 카테고리 자동 분류
+  const categorizeKeywords = async (parsed: ParsedData) => {
+    setIsCategorizing(true)
+    toast.info('카테고리 분류 중...')
+
+    try {
+      // 키워드 목록 추출
+      const keywords = parsed.keywords.map((kw) => kw.keyword)
+
+      // API 호출
+      const response = await fetch('/api/categorize-keywords', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ keywords }),
+      })
+
+      if (!response.ok) {
+        throw new Error('카테고리 분류 API 호출 실패')
+      }
+
+      const data = await response.json()
+      const categorizedKeywords: Array<{ keyword: string; category: string }> = data.categories
+
+      // 카테고리 매칭
+      const categorizedData: ParsedData = {
+        keywords: parsed.keywords.map((kw) => {
+          const categoryInfo = categorizedKeywords.find((ck) => ck.keyword === kw.keyword)
+          return {
+            ...kw,
+            category: categoryInfo?.category || '미분류',
+          }
+        }),
+      }
+
+      setParsedData(categorizedData)
+      toast.success('카테고리 분류가 완료되었습니다.')
+    } catch (error) {
+      console.error('카테고리 분류 오류:', error)
+      toast.warning('카테고리 분류에 실패했습니다. 기본값 "미분류"로 설정됩니다.')
+
+      // 에러 발생 시 기본값 "미분류"로 설정
+      const defaultCategorizedData: ParsedData = {
+        keywords: parsed.keywords.map((kw) => ({
+          ...kw,
+          category: '미분류',
+        })),
+      }
+
+      setParsedData(defaultCategorizedData)
+    } finally {
+      setIsCategorizing(false)
+    }
   }
 
   // 엑셀 데이터를 JSON으로 변환
@@ -322,6 +418,7 @@ export default function Page1() {
 
       const keywordData: KeywordData = {
         keyword,
+        category: '', // 초기값, 나중에 categorizeKeywords에서 설정됨
         PC: [],
         Mobile: [],
       }
@@ -1475,6 +1572,7 @@ export default function Page1() {
     uploadedFile &&
     parsedData &&
     !isAnalyzing &&
+    !isCategorizing &&
     ((analysisMode === '순위 기준' && pcRank && mobileRank) ||
       (analysisMode === '예산 기준' &&
         pcBudget &&
@@ -1557,7 +1655,7 @@ export default function Page1() {
                     />
                     {pcBudget && (
                       <p className="text-sm text-gray-600 mt-1">
-                        {pcBudget}원 ({numberToKorean(parseInt(removeComma(pcBudget)))})
+                        {formatKoreanCurrency(parseInt(removeComma(pcBudget)))}
                       </p>
                     )}
                   </div>
@@ -1574,42 +1672,64 @@ export default function Page1() {
                     />
                     {mobileBudget && (
                       <p className="text-sm text-gray-600 mt-1">
-                        {mobileBudget}원 ({numberToKorean(parseInt(removeComma(mobileBudget)))})
+                        {formatKoreanCurrency(parseInt(removeComma(mobileBudget)))}
                       </p>
                     )}
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-2">PC 순위</label>
-                    <Select value={pcRank} onValueChange={setPcRank}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="PC 순위 선택" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-white">
-                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((rank) => (
-                          <SelectItem key={rank} value={rank.toString()}>
-                            {rank}순위
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">PC 순위</label>
+                      <Select value={pcRank} onValueChange={setPcRank}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="PC 순위 선택" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white">
+                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((rank) => (
+                            <SelectItem key={rank} value={rank.toString()}>
+                              {rank}순위
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Mobile 순위</label>
+                      <Select value={mobileRank} onValueChange={setMobileRank}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Mobile 순위 선택" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white">
+                          {[1, 2, 3, 4, 5].map((rank) => (
+                            <SelectItem key={rank} value={rank.toString()}>
+                              {rank}순위
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Mobile 순위</label>
-                    <Select value={mobileRank} onValueChange={setMobileRank}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Mobile 순위 선택" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-white">
-                        {[1, 2, 3, 4, 5].map((rank) => (
-                          <SelectItem key={rank} value={rank.toString()}>
-                            {rank}순위
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">집중 키워드군</label>
+                      <Input
+                        type="text"
+                        value={focusKeywordGroup}
+                        onChange={(e) => setFocusKeywordGroup(e.target.value)}
+                        placeholder="특정 키워드가 아니라 키워드 범주 형태를 입력해주세요. ex) 브랜드, 패션, 건강 등"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">제외 키워드군</label>
+                      <Input
+                        type="text"
+                        value={excludeKeywordGroup}
+                        onChange={(e) => setExcludeKeywordGroup(e.target.value)}
+                        placeholder="특정 키워드가 아니라 키워드 범주 형태를 입력해주세요. ex) 브랜드, 패션, 건강 등"
+                      />
+                    </div>
                   </div>
                 </div>
               )}
