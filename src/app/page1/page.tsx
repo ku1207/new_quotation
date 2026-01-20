@@ -135,7 +135,8 @@ export default function Page1() {
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // 숫자를 한글로 변환하는 함수
+  // 숫자를 한글로 변환하는 함수 (현재 미사용, 향후 사용 가능)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const numberToKorean = (num: number): string => {
     if (num === 0) return '0원'
 
@@ -169,6 +170,38 @@ export default function Page1() {
     }
 
     return result + '원'
+  }
+
+  // 숫자를 간결한 한글 금액으로 변환하는 함수
+  const formatKoreanCurrency = (num: number): string => {
+    if (num === 0) return '0원'
+
+    // 억 단위 (100000000 이상)
+    if (num >= 100000000) {
+      const eok = Math.floor(num / 100000000)
+      if (eok >= 1000) {
+        return `${eok.toLocaleString()}억원`
+      }
+      return `${eok}억원`
+    }
+
+    // 만 단위 (10000 이상)
+    if (num >= 10000) {
+      const man = Math.floor(num / 10000)
+      if (man >= 1000) {
+        return `${man.toLocaleString()}만원`
+      }
+      return `${man}만원`
+    }
+
+    // 천 단위 (1000 이상)
+    if (num >= 1000) {
+      const cheon = Math.floor(num / 1000)
+      return `${cheon}천원`
+    }
+
+    // 천 미만
+    return `${num}원`
   }
 
   // 숫자에 쉼표 추가
@@ -1622,7 +1655,7 @@ export default function Page1() {
                     />
                     {pcBudget && (
                       <p className="text-sm text-gray-600 mt-1">
-                        {pcBudget}원 ({numberToKorean(parseInt(removeComma(pcBudget)))})
+                        {formatKoreanCurrency(parseInt(removeComma(pcBudget)))}
                       </p>
                     )}
                   </div>
@@ -1639,7 +1672,7 @@ export default function Page1() {
                     />
                     {mobileBudget && (
                       <p className="text-sm text-gray-600 mt-1">
-                        {mobileBudget}원 ({numberToKorean(parseInt(removeComma(mobileBudget)))})
+                        {formatKoreanCurrency(parseInt(removeComma(mobileBudget)))}
                       </p>
                     )}
                   </div>
