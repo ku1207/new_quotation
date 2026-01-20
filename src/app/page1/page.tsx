@@ -131,6 +131,54 @@ export default function Page1() {
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // 숫자를 한글로 변환하는 함수
+  const numberToKorean = (num: number): string => {
+    if (num === 0) return '0원'
+
+    const units = ['', '만', '억', '조']
+    const smallUnits = ['', '천', '백', '십']
+
+    let result = ''
+    let unitIndex = 0
+
+    while (num > 0) {
+      const part = num % 10000
+      if (part > 0) {
+        let partStr = ''
+        let tempPart = part
+        let smallUnitIndex = 0
+
+        while (tempPart > 0) {
+          const digit = tempPart % 10
+          if (digit > 0) {
+            partStr = (digit === 1 && smallUnitIndex > 0 ? '' : digit.toString()) +
+                      smallUnits[smallUnitIndex] + partStr
+          }
+          tempPart = Math.floor(tempPart / 10)
+          smallUnitIndex++
+        }
+
+        result = partStr + units[unitIndex] + result
+      }
+      num = Math.floor(num / 10000)
+      unitIndex++
+    }
+
+    return result + '원'
+  }
+
+  // 숫자에 쉼표 추가
+  const formatNumberWithComma = (value: string): string => {
+    const numbers = value.replace(/[^\d]/g, '')
+    if (!numbers) return ''
+    return Number(numbers).toLocaleString()
+  }
+
+  // 쉼표가 포함된 문자열에서 숫자만 추출
+  const removeComma = (value: string): string => {
+    return value.replace(/[^\d]/g, '')
+  }
+
   // 새로운 상태 추가
   const [aggregatedByRank, setAggregatedByRank] = useState<AggregatedRankData | null>(null)
   const [scenarioMatrix, setScenarioMatrix] = useState<ScenarioItem[]>([])
@@ -149,10 +197,10 @@ export default function Page1() {
   const handleAnalysisModeChange = (mode: string) => {
     setAnalysisMode(mode)
     // 관련 상태 초기화
-    if (mode === '견적 기반') {
+    if (mode === '예산 기준') {
       setPcRank('')
       setMobileRank('')
-    } else if (mode === '순위 기반') {
+    } else if (mode === '순위 기준') {
       setPcBudget('')
       setMobileBudget('')
     }
@@ -549,10 +597,10 @@ export default function Page1() {
       return
     }
 
-    if (analysisMode === '견적 기반') {
+    if (analysisMode === '예산 기준') {
       // 예산 기반 분석 (Greedy Downgrade)
       await handleBudgetBasedAnalysis()
-    } else if (analysisMode === '순위 기반') {
+    } else if (analysisMode === '순위 기준') {
       // 기존 순위 기반 분석
       handleRankBasedAnalysis()
     } else {
@@ -564,8 +612,8 @@ export default function Page1() {
   const handleBudgetBasedAnalysis = async () => {
     if (!parsedData) return
 
-    const pcBudgetNum = parseInt(pcBudget)
-    const mobileBudgetNum = parseInt(mobileBudget)
+    const pcBudgetNum = parseInt(removeComma(pcBudget))
+    const mobileBudgetNum = parseInt(removeComma(mobileBudget))
 
     if (!pcBudget || !mobileBudget || pcBudgetNum <= 0 || mobileBudgetNum <= 0) {
       toast.error('유효한 예산을 입력해주세요.')
@@ -662,8 +710,8 @@ export default function Page1() {
 
       setAnalysisResult(result)
 
-      // 견적 기반 분석인 경우, 선택된 순위를 상태에 저장
-      if (analysisMode === '견적 기반') {
+      // 예산 기준 분석인 경우, 선택된 순위를 상태에 저장
+      if (analysisMode === '예산 기준') {
         setPcRank(finalPcRank.toString())
         setMobileRank(finalMobileRank.toString())
       }
@@ -802,9 +850,9 @@ export default function Page1() {
 
   // 다운로드 분기 처리
   const handleDownloadAnalysis = () => {
-    if (analysisMode === '견적 기반') {
+    if (analysisMode === '예산 기준') {
       handleDownloadBudgetAnalysis()
-    } else if (analysisMode === '순위 기반') {
+    } else if (analysisMode === '순위 기준') {
       handleDownloadRankAnalysis()
     } else {
       toast.error('분석 방식을 먼저 선택해주세요.')
@@ -819,8 +867,8 @@ export default function Page1() {
     }
 
     try {
-      const pcBudgetNum = parseInt(pcBudget)
-      const mobileBudgetNum = parseInt(mobileBudget)
+      const pcBudgetNum = parseInt(removeComma(pcBudget))
+      const mobileBudgetNum = parseInt(removeComma(mobileBudget))
 
       // PC 총계 계산
       const pcTotal = {
@@ -1427,20 +1475,24 @@ export default function Page1() {
     uploadedFile &&
     parsedData &&
     !isAnalyzing &&
-    ((analysisMode === '순위 기반' && pcRank && mobileRank) ||
-      (analysisMode === '견적 기반' &&
+    ((analysisMode === '순위 기준' && pcRank && mobileRank) ||
+      (analysisMode === '예산 기준' &&
         pcBudget &&
         mobileBudget &&
-        parseInt(pcBudget) > 0 &&
-        parseInt(mobileBudget) > 0))
+        parseInt(removeComma(pcBudget)) > 0 &&
+        parseInt(removeComma(mobileBudget)) > 0))
 
   // 다운로드 버튼 활성화 여부
   const isDownloadEnabled =
-    (analysisMode === '순위 기반' && analysisResult !== null) ||
-    (analysisMode === '견적 기반' &&
+    (analysisMode === '순위 기준' && analysisResult !== null) ||
+    (analysisMode === '예산 기준' &&
       pcOptimizationResult !== null &&
       mobileOptimizationResult !== null &&
       budgetInsights !== null)
+
+  // 배경색 동적 설정
+  const cardBgColor = analysisMode === '순위 기준' ? 'bg-blue-50/50' :
+                      analysisMode === '예산 기준' ? 'bg-indigo-50/50' : 'bg-gray-50/50'
 
   return (
     <div className="min-h-[calc(100vh-65px)] p-8 bg-gray-50">
@@ -1452,54 +1504,79 @@ export default function Page1() {
           </p>
         </div>
 
-        {/* 분석 방식 선택 영역 */}
-        <Card className="bg-indigo-50/50">
+        {/* 견적 기준 선택 영역 */}
+        <Card className={cardBgColor}>
           <CardHeader>
-            <CardTitle>분석 방식 선택</CardTitle>
+            <CardTitle>견적 기준 선택</CardTitle>
           </CardHeader>
           <CardContent>
-            <Select value={analysisMode} onValueChange={handleAnalysisModeChange}>
-              <SelectTrigger>
-                <SelectValue placeholder="분석 방식을 선택하세요" />
-              </SelectTrigger>
-              <SelectContent className="bg-white">
-                <SelectItem value="견적 기반">견적 기반</SelectItem>
-                <SelectItem value="순위 기반">순위 기반</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleAnalysisModeChange('순위 기준')}
+                className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all ${
+                  analysisMode === '순위 기준'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                }`}
+              >
+                순위 기준
+              </button>
+              <button
+                onClick={() => handleAnalysisModeChange('예산 기준')}
+                className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all ${
+                  analysisMode === '예산 기준'
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                }`}
+              >
+                예산 기준
+              </button>
+            </div>
           </CardContent>
         </Card>
 
         {/* 부가정보 입력 영역 - 조건부 렌더링 */}
         {analysisMode && (
-          <Card className="bg-blue-50/50">
+          <Card className={cardBgColor}>
             <CardHeader>
               <CardTitle>부가정보 입력</CardTitle>
             </CardHeader>
             <CardContent>
-              {analysisMode === '견적 기반' ? (
+              {analysisMode === '예산 기준' ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-2">PC 예산 (원)</label>
                     <Input
-                      type="number"
-                      step="1"
+                      type="text"
                       value={pcBudget}
-                      onChange={(e) => setPcBudget(e.target.value)}
+                      onChange={(e) => {
+                        const formatted = formatNumberWithComma(e.target.value)
+                        setPcBudget(formatted)
+                      }}
                       placeholder="PC 예산을 입력하세요"
-                      min="0"
                     />
+                    {pcBudget && (
+                      <p className="text-sm text-gray-600 mt-1">
+                        {pcBudget}원 ({numberToKorean(parseInt(removeComma(pcBudget)))})
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-2">Mobile 예산 (원)</label>
                     <Input
-                      type="number"
-                      step="1"
+                      type="text"
                       value={mobileBudget}
-                      onChange={(e) => setMobileBudget(e.target.value)}
+                      onChange={(e) => {
+                        const formatted = formatNumberWithComma(e.target.value)
+                        setMobileBudget(formatted)
+                      }}
                       placeholder="Mobile 예산을 입력하세요"
-                      min="0"
                     />
+                    {mobileBudget && (
+                      <p className="text-sm text-gray-600 mt-1">
+                        {mobileBudget}원 ({numberToKorean(parseInt(removeComma(mobileBudget)))})
+                      </p>
+                    )}
                   </div>
                 </div>
               ) : (
