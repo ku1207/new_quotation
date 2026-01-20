@@ -126,8 +126,6 @@ export default function Page1() {
   const [mobileRank, setMobileRank] = useState<string>('')
   const [pcBudget, setPcBudget] = useState<string>('')
   const [mobileBudget, setMobileBudget] = useState<string>('')
-  const [focusKeywordGroup, setFocusKeywordGroup] = useState<string>('')
-  const [excludeKeywordGroup, setExcludeKeywordGroup] = useState<string>('')
   const [parsedData, setParsedData] = useState<ParsedData | null>(null)
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -1678,58 +1676,36 @@ export default function Page1() {
                   </div>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">PC 순위</label>
-                      <Select value={pcRank} onValueChange={setPcRank}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="PC 순위 선택" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white">
-                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((rank) => (
-                            <SelectItem key={rank} value={rank.toString()}>
-                              {rank}순위
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Mobile 순위</label>
-                      <Select value={mobileRank} onValueChange={setMobileRank}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Mobile 순위 선택" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white">
-                          {[1, 2, 3, 4, 5].map((rank) => (
-                            <SelectItem key={rank} value={rank.toString()}>
-                              {rank}순위
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">PC 순위</label>
+                    <Select value={pcRank} onValueChange={setPcRank}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="PC 순위 선택" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white">
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((rank) => (
+                          <SelectItem key={rank} value={rank.toString()}>
+                            {rank}순위
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">집중 키워드군</label>
-                      <Input
-                        type="text"
-                        value={focusKeywordGroup}
-                        onChange={(e) => setFocusKeywordGroup(e.target.value)}
-                        placeholder="특정 키워드가 아니라 키워드 범주 형태를 입력해주세요. ex) 브랜드, 패션, 건강 등"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">제외 키워드군</label>
-                      <Input
-                        type="text"
-                        value={excludeKeywordGroup}
-                        onChange={(e) => setExcludeKeywordGroup(e.target.value)}
-                        placeholder="특정 키워드가 아니라 키워드 범주 형태를 입력해주세요. ex) 브랜드, 패션, 건강 등"
-                      />
-                    </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Mobile 순위</label>
+                    <Select value={mobileRank} onValueChange={setMobileRank}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Mobile 순위 선택" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white">
+                        {[1, 2, 3, 4, 5].map((rank) => (
+                          <SelectItem key={rank} value={rank.toString()}>
+                            {rank}순위
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
               )}
