@@ -126,6 +126,7 @@ export default function Page1() {
   const [mobileRank, setMobileRank] = useState<string>('')
   const [pcBudget, setPcBudget] = useState<string>('')
   const [mobileBudget, setMobileBudget] = useState<string>('')
+  const [optimizationGoal, setOptimizationGoal] = useState<'clicks' | 'impressions'>('clicks')
   const [parsedData, setParsedData] = useState<ParsedData | null>(null)
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -496,7 +497,8 @@ export default function Page1() {
   const optimizeBudgetGreedy = (
     keywords: KeywordData[],
     device: 'PC' | 'Mobile',
-    budget: number
+    budget: number,
+    goal: 'clicks' | 'impressions' = 'clicks'
   ): OptimizationResult[] => {
     const maxRank = device === 'PC' ? 10 : 5
 
@@ -533,18 +535,28 @@ export default function Page1() {
 
         if (!currentData || !nextData) continue
 
-        const deltaClicks = currentData.clicks - nextData.clicks
         const deltaCost = currentData.cost - nextData.cost
 
         if (deltaCost <= 0) continue // 비용이 오히려 증가하는 경우 제외
 
-        const lps = deltaCost > 0 ? deltaClicks / deltaCost : Infinity
+        let deltaMetric: number
+        let lps: number
+
+        if (goal === 'clicks') {
+          // 클릭 최대화: 클릭 손실 기준
+          deltaMetric = currentData.clicks - nextData.clicks
+          lps = deltaCost > 0 ? deltaMetric / deltaCost : Infinity
+        } else {
+          // 노출 최대화: 노출 손실 기준
+          deltaMetric = currentData.impr - nextData.impr
+          lps = deltaCost > 0 ? deltaMetric / deltaCost : Infinity
+        }
 
         candidates.push({
           keyword: kw.keyword,
           fromRank: currentRank,
           toRank: currentRank + 1,
-          deltaClicks,
+          deltaClicks: deltaMetric, // 클릭 또는 노출 손실을 deltaClicks에 저장
           deltaCost,
           lps,
         })
@@ -554,7 +566,7 @@ export default function Page1() {
 
       // Tie-break 규칙으로 정렬
       candidates.sort((a, b) => {
-        // 1. ΔK_down이 0인 경우 최우선 (클릭 손실 없이 비용만 절감)
+        // 1. 손실이 0인 경우 최우선 (손실 없이 비용만 절감)
         if (a.deltaClicks === 0 && b.deltaClicks !== 0) return -1
         if (a.deltaClicks !== 0 && b.deltaClicks === 0) return 1
 
@@ -718,9 +730,9 @@ export default function Page1() {
     setIsAnalyzing(true)
 
     try {
-      // Greedy Downgrade 알고리즘 실행
-      const pcResults = optimizeBudgetGreedy(parsedData.keywords, 'PC', pcBudgetNum)
-      const mobileResults = optimizeBudgetGreedy(parsedData.keywords, 'Mobile', mobileBudgetNum)
+      // Greedy Downgrade 알고리즘 실행 (선택된 최적화 기준 적용)
+      const pcResults = optimizeBudgetGreedy(parsedData.keywords, 'PC', pcBudgetNum, optimizationGoal)
+      const mobileResults = optimizeBudgetGreedy(parsedData.keywords, 'Mobile', mobileBudgetNum, optimizationGoal)
 
       setPcOptimizationResult(pcResults)
       setMobileOptimizationResult(mobileResults)
@@ -1594,18 +1606,18 @@ export default function Page1() {
     <div className="min-h-[calc(100vh-65px)] p-8 bg-gray-50">
       <div className="max-w-7xl mx-auto space-y-6">
         <div>
-          <h1 className="text-3xl font-bold mb-2">대량견적 결과 파일 분석</h1>
+          <h1 className="text-3xl font-bold mb-2">AI 맞춤형 견적</h1>
           <p className="text-gray-600">
             엑셀 파일을 업로드하고 분석 방식을 선택하여 결과를 확인하세요.
           </p>
         </div>
 
-        {/* 견적 기준 선택 영역 */}
+        {/* 견적 기준 선택 및 부가정보 입력 영역 */}
         <Card className={cardBgColor}>
           <CardHeader>
             <CardTitle>견적 기준 선택</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-6">
             <div className="flex gap-2">
               <button
                 onClick={() => handleAnalysisModeChange('순위 기준')}
@@ -1615,7 +1627,7 @@ export default function Page1() {
                     : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
                 }`}
               >
-                순위 기준
+                목표 순위
               </button>
               <button
                 onClick={() => handleAnalysisModeChange('예산 기준')}
@@ -1628,90 +1640,114 @@ export default function Page1() {
                 예산 기준
               </button>
             </div>
+
+            {/* 부가정보 입력 - 조건부 렌더링 */}
+            {analysisMode && (
+              <div className="space-y-4">
+                {analysisMode === '예산 기준' ? (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-2">PC 예산 (원)</label>
+                        <Input
+                          type="text"
+                          value={pcBudget}
+                          onChange={(e) => {
+                            const formatted = formatNumberWithComma(e.target.value)
+                            setPcBudget(formatted)
+                          }}
+                          placeholder="PC 예산을 입력하세요"
+                        />
+                        {pcBudget && (
+                          <p className="text-sm text-gray-600 mt-1">
+                            {formatKoreanCurrency(parseInt(removeComma(pcBudget)))}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-2">Mobile 예산 (원)</label>
+                        <Input
+                          type="text"
+                          value={mobileBudget}
+                          onChange={(e) => {
+                            const formatted = formatNumberWithComma(e.target.value)
+                            setMobileBudget(formatted)
+                          }}
+                          placeholder="Mobile 예산을 입력하세요"
+                        />
+                        {mobileBudget && (
+                          <p className="text-sm text-gray-600 mt-1">
+                            {formatKoreanCurrency(parseInt(removeComma(mobileBudget)))}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 최적화 기준 선택 버튼 */}
+                    <div>
+                      <label className="block text-sm font-medium mb-2">최적화 기준</label>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setOptimizationGoal('clicks')}
+                          className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
+                            optimizationGoal === 'clicks'
+                              ? 'bg-indigo-600 text-white shadow-md'
+                              : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                          }`}
+                        >
+                          클릭 최대화
+                        </button>
+                        <button
+                          onClick={() => setOptimizationGoal('impressions')}
+                          className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
+                            optimizationGoal === 'impressions'
+                              ? 'bg-indigo-600 text-white shadow-md'
+                              : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                          }`}
+                        >
+                          노출 최대화
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">PC 순위</label>
+                      <Select value={pcRank} onValueChange={setPcRank}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="PC 순위 선택" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white">
+                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((rank) => (
+                            <SelectItem key={rank} value={rank.toString()}>
+                              {rank}순위
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Mobile 순위</label>
+                      <Select value={mobileRank} onValueChange={setMobileRank}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Mobile 순위 선택" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white">
+                          {[1, 2, 3, 4, 5].map((rank) => (
+                            <SelectItem key={rank} value={rank.toString()}>
+                              {rank}순위
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
-
-        {/* 부가정보 입력 영역 - 조건부 렌더링 */}
-        {analysisMode && (
-          <Card className={cardBgColor}>
-            <CardHeader>
-              <CardTitle>부가정보 입력</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {analysisMode === '예산 기준' ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-2">PC 예산 (원)</label>
-                    <Input
-                      type="text"
-                      value={pcBudget}
-                      onChange={(e) => {
-                        const formatted = formatNumberWithComma(e.target.value)
-                        setPcBudget(formatted)
-                      }}
-                      placeholder="PC 예산을 입력하세요"
-                    />
-                    {pcBudget && (
-                      <p className="text-sm text-gray-600 mt-1">
-                        {formatKoreanCurrency(parseInt(removeComma(pcBudget)))}
-                      </p>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Mobile 예산 (원)</label>
-                    <Input
-                      type="text"
-                      value={mobileBudget}
-                      onChange={(e) => {
-                        const formatted = formatNumberWithComma(e.target.value)
-                        setMobileBudget(formatted)
-                      }}
-                      placeholder="Mobile 예산을 입력하세요"
-                    />
-                    {mobileBudget && (
-                      <p className="text-sm text-gray-600 mt-1">
-                        {formatKoreanCurrency(parseInt(removeComma(mobileBudget)))}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-2">PC 순위</label>
-                    <Select value={pcRank} onValueChange={setPcRank}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="PC 순위 선택" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-white">
-                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((rank) => (
-                          <SelectItem key={rank} value={rank.toString()}>
-                            {rank}순위
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Mobile 순위</label>
-                    <Select value={mobileRank} onValueChange={setMobileRank}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Mobile 순위 선택" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-white">
-                        {[1, 2, 3, 4, 5].map((rank) => (
-                          <SelectItem key={rank} value={rank.toString()}>
-                            {rank}순위
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
 
         {/* 파일 업로드 영역 */}
         <Card className="bg-green-50/50">
