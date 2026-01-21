@@ -590,23 +590,43 @@ export default function Page1() {
       currentRanks[best.keyword] = best.toRank
     }
 
-    // 4. 최종 결과 생성
+    // 3-1. 예산 초과 시 모든 키워드를 최하 순위로 강제 다운그레이드
+    if (calculateTotalCost() > budget) {
+      for (const kw of keywords) {
+        currentRanks[kw.keyword] = maxRank
+      }
+    }
+
+    // 4. 최종 결과 생성 (동일 비용 중 가장 높은 순위 선택)
     const results: OptimizationResult[] = []
     for (const kw of keywords) {
-      const optimalRank = currentRanks[kw.keyword]
+      let optimalRank = currentRanks[kw.keyword]
       const deviceData = device === 'PC' ? kw.PC : kw.Mobile
-      const data = deviceData.find((d) => d.rank === optimalRank)
+      const currentData = deviceData.find((d) => d.rank === optimalRank)
 
-      if (data) {
-        results.push({
-          keyword: kw.keyword,
-          optimalRank,
-          impr: data.impr,
-          clicks: data.clicks,
-          ctr: data.impr > 0 ? (data.clicks / data.impr) * 100 : 0,
-          cpc: data.clicks > 0 ? Math.round(data.cost / data.clicks) : 0,
-          cost: data.cost,
-        })
+      if (currentData) {
+        // 동일한 비용을 가진 가장 높은 순위 찾기
+        const currentCost = currentData.cost
+        for (let rank = 1; rank < optimalRank; rank++) {
+          const checkData = deviceData.find((d) => d.rank === rank)
+          if (checkData && checkData.cost === currentCost) {
+            optimalRank = rank
+            break
+          }
+        }
+
+        const finalData = deviceData.find((d) => d.rank === optimalRank)
+        if (finalData) {
+          results.push({
+            keyword: kw.keyword,
+            optimalRank,
+            impr: finalData.impr,
+            clicks: finalData.clicks,
+            ctr: finalData.impr > 0 ? (finalData.clicks / finalData.impr) * 100 : 0,
+            cpc: finalData.clicks > 0 ? Math.round(finalData.cost / finalData.clicks) : 0,
+            cost: finalData.cost,
+          })
+        }
       }
     }
 
@@ -1063,7 +1083,7 @@ export default function Page1() {
         sheet1Data.push(['핵심 키워드 분석'])
         sheet1Data.push([budgetInsights.core_keywords])
         sheet1Data.push([])
-        sheet1Data.push(['다운그레이드 패턴'])
+        sheet1Data.push(['최대화 도달 패턴'])
         sheet1Data.push([budgetInsights.downgrade_pattern])
         sheet1Data.push([])
         sheet1Data.push(['액션 아이템'])
