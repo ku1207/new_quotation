@@ -130,7 +130,7 @@ export default function Page1() {
   const [parsedData, setParsedData] = useState<ParsedData | null>(null)
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [isCategorizing, setIsCategorizing] = useState(false)
+  // const [isCategorizing, setIsCategorizing] = useState(false) // 카테고리 분류 기능 비활성화로 인해 주석 처리
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -320,8 +320,8 @@ export default function Page1() {
         setParsedData(parsed)
         toast.success('파일이 성공적으로 파싱되었습니다.')
 
-        // 카테고리 분류 수행
-        await categorizeKeywords(parsed)
+        // 카테고리 분류 수행 (현재 비활성화)
+        // await categorizeKeywords(parsed)
       } catch (error) {
         console.error('파일 파싱 오류:', error)
         toast.error('파일 파싱 중 오류가 발생했습니다.')
@@ -335,7 +335,11 @@ export default function Page1() {
     reader.readAsBinaryString(file)
   }
 
-  // 카테고리 자동 분류
+  /*
+   * 카테고리 자동 분류 기능 (현재 비활성화)
+   * 필요 시 주석을 해제하여 다시 활성화할 수 있습니다.
+   */
+  /*
   const categorizeKeywords = async (parsed: ParsedData) => {
     setIsCategorizing(true)
     toast.info('카테고리 분류 중...')
@@ -390,6 +394,7 @@ export default function Page1() {
       setIsCategorizing(false)
     }
   }
+  */
 
   // 엑셀 데이터를 JSON으로 변환
   const parseExcelToJSON = (data: unknown[][]): ParsedData => {
@@ -520,7 +525,7 @@ export default function Page1() {
       return total
     }
 
-    // 3. 예산 초과 시 다운그레이드 반복
+    // 3. 예산 초과 시 다운그레이드 반복 (최소 감소율 + 최대 감액 목표)
     while (calculateTotalCost() > budget) {
       // 다운그레이드 후보 생성
       const candidates: DowngradeCandidate[] = []
@@ -564,16 +569,16 @@ export default function Page1() {
 
       if (candidates.length === 0) break // 더 이상 다운그레이드 불가능
 
-      // Tie-break 규칙으로 정렬
+      // Tie-break 규칙으로 정렬 (최소 감소율 + 최대 감액)
       candidates.sort((a, b) => {
         // 1. 손실이 0인 경우 최우선 (손실 없이 비용만 절감)
         if (a.deltaClicks === 0 && b.deltaClicks !== 0) return -1
         if (a.deltaClicks !== 0 && b.deltaClicks === 0) return 1
 
-        // 2. LPS가 낮은 순 (효율적인 다운그레이드)
+        // 2. LPS가 낮은 순 (효율적인 다운그레이드 = 최소 감소율)
         if (Math.abs(a.lps - b.lps) > 0.0001) return a.lps - b.lps
 
-        // 3. ΔC_down이 큰 순 (절감 비용이 큰 순)
+        // 3. ΔC_down이 큰 순 (절감 비용이 큰 순 = 최대 감액)
         if (a.deltaCost !== b.deltaCost) return b.deltaCost - a.deltaCost
 
         // 4. ToRank가 큰 순 (하위 순위로 많이 내려가는 순)
@@ -585,23 +590,47 @@ export default function Page1() {
       currentRanks[best.keyword] = best.toRank
     }
 
+    // 3-1. 예산 초과 시 모든 키워드를 최하 순위로 강제 다운그레이드
+    let forcedToMaxRank = false
+    if (calculateTotalCost() > budget) {
+      forcedToMaxRank = true
+      for (const kw of keywords) {
+        currentRanks[kw.keyword] = maxRank
+      }
+    }
+
     // 4. 최종 결과 생성
     const results: OptimizationResult[] = []
     for (const kw of keywords) {
-      const optimalRank = currentRanks[kw.keyword]
+      let optimalRank = currentRanks[kw.keyword]
       const deviceData = device === 'PC' ? kw.PC : kw.Mobile
-      const data = deviceData.find((d) => d.rank === optimalRank)
+      const currentData = deviceData.find((d) => d.rank === optimalRank)
 
-      if (data) {
-        results.push({
-          keyword: kw.keyword,
-          optimalRank,
-          impr: data.impr,
-          clicks: data.clicks,
-          ctr: data.impr > 0 ? (data.clicks / data.impr) * 100 : 0,
-          cpc: data.clicks > 0 ? Math.round(data.cost / data.clicks) : 0,
-          cost: data.cost,
-        })
+      if (currentData) {
+        // 최하 순위로 강제 설정된 경우에만 동일 비용 중 가장 높은 순위 찾기
+        if (forcedToMaxRank && optimalRank === maxRank) {
+          const currentCost = currentData.cost
+          for (let rank = 1; rank < optimalRank; rank++) {
+            const checkData = deviceData.find((d) => d.rank === rank)
+            if (checkData && checkData.cost === currentCost) {
+              optimalRank = rank
+              break
+            }
+          }
+        }
+
+        const finalData = deviceData.find((d) => d.rank === optimalRank)
+        if (finalData) {
+          results.push({
+            keyword: kw.keyword,
+            optimalRank,
+            impr: finalData.impr,
+            clicks: finalData.clicks,
+            ctr: finalData.impr > 0 ? (finalData.clicks / finalData.impr) * 100 : 0,
+            cpc: finalData.clicks > 0 ? Math.round(finalData.cost / finalData.clicks) : 0,
+            cost: finalData.cost,
+          })
+        }
       }
     }
 
@@ -1058,7 +1087,7 @@ export default function Page1() {
         sheet1Data.push(['핵심 키워드 분석'])
         sheet1Data.push([budgetInsights.core_keywords])
         sheet1Data.push([])
-        sheet1Data.push(['다운그레이드 패턴'])
+        sheet1Data.push(['최대화 도달 패턴'])
         sheet1Data.push([budgetInsights.downgrade_pattern])
         sheet1Data.push([])
         sheet1Data.push(['액션 아이템'])
@@ -1582,7 +1611,6 @@ export default function Page1() {
     uploadedFile &&
     parsedData &&
     !isAnalyzing &&
-    !isCategorizing &&
     ((analysisMode === '순위 기준' && pcRank && mobileRank) ||
       (analysisMode === '예산 기준' &&
         pcBudget &&
