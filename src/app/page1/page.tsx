@@ -525,7 +525,7 @@ export default function Page1() {
       return total
     }
 
-    // 3. 예산 초과 시 다운그레이드 반복
+    // 3. 예산 초과 시 다운그레이드 반복 (최소 감소율 + 최대 감액 목표)
     while (calculateTotalCost() > budget) {
       // 다운그레이드 후보 생성
       const candidates: DowngradeCandidate[] = []
@@ -569,16 +569,16 @@ export default function Page1() {
 
       if (candidates.length === 0) break // 더 이상 다운그레이드 불가능
 
-      // Tie-break 규칙으로 정렬
+      // Tie-break 규칙으로 정렬 (최소 감소율 + 최대 감액)
       candidates.sort((a, b) => {
         // 1. 손실이 0인 경우 최우선 (손실 없이 비용만 절감)
         if (a.deltaClicks === 0 && b.deltaClicks !== 0) return -1
         if (a.deltaClicks !== 0 && b.deltaClicks === 0) return 1
 
-        // 2. LPS가 낮은 순 (효율적인 다운그레이드)
+        // 2. LPS가 낮은 순 (효율적인 다운그레이드 = 최소 감소율)
         if (Math.abs(a.lps - b.lps) > 0.0001) return a.lps - b.lps
 
-        // 3. ΔC_down이 큰 순 (절감 비용이 큰 순)
+        // 3. ΔC_down이 큰 순 (절감 비용이 큰 순 = 최대 감액)
         if (a.deltaCost !== b.deltaCost) return b.deltaCost - a.deltaCost
 
         // 4. ToRank가 큰 순 (하위 순위로 많이 내려가는 순)
@@ -591,13 +591,15 @@ export default function Page1() {
     }
 
     // 3-1. 예산 초과 시 모든 키워드를 최하 순위로 강제 다운그레이드
+    let forcedToMaxRank = false
     if (calculateTotalCost() > budget) {
+      forcedToMaxRank = true
       for (const kw of keywords) {
         currentRanks[kw.keyword] = maxRank
       }
     }
 
-    // 4. 최종 결과 생성 (동일 비용 중 가장 높은 순위 선택)
+    // 4. 최종 결과 생성
     const results: OptimizationResult[] = []
     for (const kw of keywords) {
       let optimalRank = currentRanks[kw.keyword]
@@ -605,13 +607,15 @@ export default function Page1() {
       const currentData = deviceData.find((d) => d.rank === optimalRank)
 
       if (currentData) {
-        // 동일한 비용을 가진 가장 높은 순위 찾기
-        const currentCost = currentData.cost
-        for (let rank = 1; rank < optimalRank; rank++) {
-          const checkData = deviceData.find((d) => d.rank === rank)
-          if (checkData && checkData.cost === currentCost) {
-            optimalRank = rank
-            break
+        // 최하 순위로 강제 설정된 경우에만 동일 비용 중 가장 높은 순위 찾기
+        if (forcedToMaxRank && optimalRank === maxRank) {
+          const currentCost = currentData.cost
+          for (let rank = 1; rank < optimalRank; rank++) {
+            const checkData = deviceData.find((d) => d.rank === rank)
+            if (checkData && checkData.cost === currentCost) {
+              optimalRank = rank
+              break
+            }
           }
         }
 
