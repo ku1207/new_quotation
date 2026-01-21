@@ -130,7 +130,7 @@ export default function Page1() {
   const [parsedData, setParsedData] = useState<ParsedData | null>(null)
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [isCategorizing, setIsCategorizing] = useState(false)
+  // const [isCategorizing, setIsCategorizing] = useState(false) // 카테고리 분류 기능 비활성화로 인해 주석 처리
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -320,8 +320,8 @@ export default function Page1() {
         setParsedData(parsed)
         toast.success('파일이 성공적으로 파싱되었습니다.')
 
-        // 카테고리 분류 수행
-        await categorizeKeywords(parsed)
+        // 카테고리 분류 수행 (현재 비활성화)
+        // await categorizeKeywords(parsed)
       } catch (error) {
         console.error('파일 파싱 오류:', error)
         toast.error('파일 파싱 중 오류가 발생했습니다.')
@@ -335,7 +335,11 @@ export default function Page1() {
     reader.readAsBinaryString(file)
   }
 
-  // 카테고리 자동 분류
+  /*
+   * 카테고리 자동 분류 기능 (현재 비활성화)
+   * 필요 시 주석을 해제하여 다시 활성화할 수 있습니다.
+   */
+  /*
   const categorizeKeywords = async (parsed: ParsedData) => {
     setIsCategorizing(true)
     toast.info('카테고리 분류 중...')
@@ -390,6 +394,7 @@ export default function Page1() {
       setIsCategorizing(false)
     }
   }
+  */
 
   // 엑셀 데이터를 JSON으로 변환
   const parseExcelToJSON = (data: unknown[][]): ParsedData => {
@@ -1582,7 +1587,6 @@ export default function Page1() {
     uploadedFile &&
     parsedData &&
     !isAnalyzing &&
-    !isCategorizing &&
     ((analysisMode === '순위 기준' && pcRank && mobileRank) ||
       (analysisMode === '예산 기준' &&
         pcBudget &&

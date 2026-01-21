@@ -1,3 +1,10 @@
+/*
+ * 이 API 엔드포인트는 현재 비활성화되어 있습니다.
+ * 키워드 카테고리 자동 분류 기능을 일시적으로 중단했습니다.
+ * 필요 시 주석을 해제하여 다시 활성화할 수 있습니다.
+ */
+
+/*
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
@@ -98,4 +105,12 @@ ${JSON.stringify(keywords)}
     console.error('카테고리 분류 오류:', error)
     return NextResponse.json({ error: '카테고리 분류 중 오류가 발생했습니다.' }, { status: 500 })
   }
+}
+*/
+
+// 임시로 빈 엔드포인트를 export하여 빌드 오류 방지
+import { NextResponse } from 'next/server'
+
+export async function POST() {
+  return NextResponse.json({ error: '이 기능은 현재 비활성화되어 있습니다.' }, { status: 503 })
 }
