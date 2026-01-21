@@ -1087,10 +1087,10 @@ export default function Page1() {
         sheet1Data.push(['핵심 키워드 분석'])
         sheet1Data.push([budgetInsights.core_keywords])
         sheet1Data.push([])
-        sheet1Data.push(['최대화 도달 패턴'])
+        sheet1Data.push(['최적화 전략'])
         sheet1Data.push([budgetInsights.downgrade_pattern])
         sheet1Data.push([])
-        sheet1Data.push(['액션 아이템'])
+        sheet1Data.push(['운영 전략 제안'])
         sheet1Data.push([budgetInsights.action_items])
       } else {
         sheet1Data.push(['인사이트'])
