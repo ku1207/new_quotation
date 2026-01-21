@@ -127,6 +127,7 @@ export default function Page1() {
   const [pcBudget, setPcBudget] = useState<string>('')
   const [mobileBudget, setMobileBudget] = useState<string>('')
   const [optimizationGoal, setOptimizationGoal] = useState<'clicks' | 'impressions'>('clicks')
+  const [optimizationMethod, setOptimizationMethod] = useState<'logic' | 'ai'>('logic')
   const [parsedData, setParsedData] = useState<ParsedData | null>(null)
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -759,14 +760,79 @@ export default function Page1() {
     setIsAnalyzing(true)
 
     try {
-      // Greedy Downgrade 알고리즘 실행 (선택된 최적화 기준 적용)
-      const pcResults = optimizeBudgetGreedy(parsedData.keywords, 'PC', pcBudgetNum, optimizationGoal)
-      const mobileResults = optimizeBudgetGreedy(parsedData.keywords, 'Mobile', mobileBudgetNum, optimizationGoal)
+      let pcResults: OptimizationResult[]
+      let mobileResults: OptimizationResult[]
+
+      if (optimizationMethod === 'logic') {
+        // 로직 기반: Greedy Downgrade 알고리즘 실행 (선택된 최적화 기준 적용)
+        pcResults = optimizeBudgetGreedy(parsedData.keywords, 'PC', pcBudgetNum, optimizationGoal)
+        mobileResults = optimizeBudgetGreedy(parsedData.keywords, 'Mobile', mobileBudgetNum, optimizationGoal)
+      } else {
+        // AI 기반: Claude API 호출
+        const response = await fetch('/api/optimize-with-ai', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            pcBudget: pcBudgetNum,
+            mobileBudget: mobileBudgetNum,
+            keywords: parsedData.keywords,
+          }),
+        })
+
+        if (!response.ok) {
+          throw new Error('AI 최적화 API 호출 실패')
+        }
+
+        const data = await response.json()
+        const aiResults: Array<{ keyword: string; device: string; greedyrank: number }> = data.results
+
+        // AI 결과를 OptimizationResult[]로 변환
+        pcResults = []
+        mobileResults = []
+
+        for (const kw of parsedData.keywords) {
+          // PC 결과 찾기
+          const pcAI = aiResults.find((r) => r.keyword === kw.keyword && r.device === 'PC')
+          if (pcAI) {
+            const pcData = kw.PC.find((d) => d.rank === pcAI.greedyrank)
+            if (pcData) {
+              pcResults.push({
+                keyword: kw.keyword,
+                optimalRank: pcAI.greedyrank,
+                impr: pcData.impr,
+                clicks: pcData.clicks,
+                ctr: pcData.impr > 0 ? (pcData.clicks / pcData.impr) * 100 : 0,
+                cpc: pcData.clicks > 0 ? Math.round(pcData.cost / pcData.clicks) : 0,
+                cost: pcData.cost,
+              })
+            }
+          }
+
+          // Mobile 결과 찾기
+          const mobileAI = aiResults.find((r) => r.keyword === kw.keyword && r.device === 'Mobile')
+          if (mobileAI) {
+            const mobileData = kw.Mobile.find((d) => d.rank === mobileAI.greedyrank)
+            if (mobileData) {
+              mobileResults.push({
+                keyword: kw.keyword,
+                optimalRank: mobileAI.greedyrank,
+                impr: mobileData.impr,
+                clicks: mobileData.clicks,
+                ctr: mobileData.impr > 0 ? (mobileData.clicks / mobileData.impr) * 100 : 0,
+                cpc: mobileData.clicks > 0 ? Math.round(mobileData.cost / mobileData.clicks) : 0,
+                cost: mobileData.cost,
+              })
+            }
+          }
+        }
+      }
 
       setPcOptimizationResult(pcResults)
       setMobileOptimizationResult(mobileResults)
 
-      // 인사이트 생성
+      // 인사이트 생성 (최적화 방식과 관계없이 항상 실행)
       const insights = await generateInsights(pcResults, mobileResults, pcBudgetNum, mobileBudgetNum)
       if (insights) {
         setBudgetInsights(insights)
@@ -1734,6 +1800,33 @@ export default function Page1() {
                           }`}
                         >
                           노출 최대화
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 최적화 방식 선택 버튼 */}
+                    <div>
+                      <label className="block text-sm font-medium mb-2">최적화 방식</label>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setOptimizationMethod('logic')}
+                          className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
+                            optimizationMethod === 'logic'
+                              ? 'bg-indigo-600 text-white shadow-md'
+                              : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                          }`}
+                        >
+                          로직 기반
+                        </button>
+                        <button
+                          onClick={() => setOptimizationMethod('ai')}
+                          className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
+                            optimizationMethod === 'ai'
+                              ? 'bg-indigo-600 text-white shadow-md'
+                              : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                          }`}
+                        >
+                          AI 기반
                         </button>
                       </div>
                     </div>
