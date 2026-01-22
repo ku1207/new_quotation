@@ -190,11 +190,27 @@ export async function POST(request: NextRequest) {
       // 마크다운 코드 블록 제거
       let cleanedContent = content.trim()
 
-      // ```로 시작하는 모든 마크다운 코드 블록 제거
-      cleanedContent = cleanedContent.replace(/^```[a-z]*\s*\n/gm, '').replace(/\n```\s*$/gm, '')
-      cleanedContent = cleanedContent.trim()
+      // ```json 또는 ``` 로 감싸진 경우 제거
+      if (cleanedContent.startsWith('```')) {
+        console.log('마크다운 코드 블록 감지')
+        const lines = cleanedContent.split('\n')
 
-      // 첫 번째 [ 부터 마지막 ] 까지만 추출 (가장 안전한 방법)
+        // 첫 줄 제거 (```json 또는 ```)
+        if (lines[0].startsWith('```')) {
+          lines.shift()
+          console.log('첫 줄(```) 제거')
+        }
+
+        // 마지막 줄이 ```인 경우 제거
+        if (lines.length > 0 && lines[lines.length - 1].trim() === '```') {
+          lines.pop()
+          console.log('마지막 줄(```) 제거')
+        }
+
+        cleanedContent = lines.join('\n').trim()
+      }
+
+      // 첫 번째 [ 부터 마지막 ] 까지만 추출
       const firstBracket = cleanedContent.indexOf('[')
       const lastBracket = cleanedContent.lastIndexOf(']')
 
