@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         model: 'claude-opus-4-5-20251101',
-        max_tokens: 8192,
+        max_tokens: 16384, // 키워드가 많을 경우 응답이 길어질 수 있으므로 증가
         messages: [
           {
             role: 'user',
@@ -190,24 +190,19 @@ export async function POST(request: NextRequest) {
       // 마크다운 코드 블록 제거
       let cleanedContent = content.trim()
 
-      // ```json 또는 ``` 로 감싸진 경우 제거
+      // ```json, ```JSON, ``` 로 감싸진 경우 제거
       if (cleanedContent.startsWith('```')) {
         console.log('마크다운 코드 블록 감지')
-        const lines = cleanedContent.split('\n')
 
-        // 첫 줄 제거 (```json 또는 ```)
-        if (lines[0].startsWith('```')) {
-          lines.shift()
-          console.log('첫 줄(```) 제거')
-        }
+        // ```json, ```JSON, ``` 등 첫 줄 제거
+        cleanedContent = cleanedContent.replace(/^```[a-zA-Z]*\n?/, '')
+        console.log('첫 줄(```json, ```JSON, ``` 등) 제거')
 
-        // 마지막 줄이 ```인 경우 제거
-        if (lines.length > 0 && lines[lines.length - 1].trim() === '```') {
-          lines.pop()
-          console.log('마지막 줄(```) 제거')
-        }
+        // 마지막 줄의 ``` 제거
+        cleanedContent = cleanedContent.replace(/\n?```\s*$/, '')
+        console.log('마지막 줄(```) 제거')
 
-        cleanedContent = lines.join('\n').trim()
+        cleanedContent = cleanedContent.trim()
       }
 
       // 첫 번째 [ 부터 마지막 ] 까지만 추출
