@@ -185,14 +185,29 @@ export async function POST(request: NextRequest) {
     let optimizationResults: Array<{ keyword: string; device: string; greedyrank: number }>
     try {
       console.log('JSON 파싱 시작...')
-      // Claude의 응답에서 JSON 부분만 추출 (마크다운 코드 블록이 있을 수 있음)
-      const jsonMatch = content.match(/\[[\s\S]*\]/)
+
+      // 마크다운 코드 블록 제거 (```json ... ``` 또는 ``` ... ```)
+      let cleanedContent = content.trim()
+
+      // ```json 또는 ``` 로 시작하는 경우 제거
+      if (cleanedContent.startsWith('```')) {
+        console.log('마크다운 코드 블록 감지, 제거 중...')
+        // 첫 번째 줄 제거 (```json 또는 ```)
+        cleanedContent = cleanedContent.replace(/^```[a-z]*\n/, '')
+        // 마지막 ``` 제거
+        cleanedContent = cleanedContent.replace(/\n```$/, '')
+        cleanedContent = cleanedContent.trim()
+        console.log('코드 블록 제거 완료')
+      }
+
+      // JSON 배열 추출
+      const jsonMatch = cleanedContent.match(/\[[\s\S]*\]/)
       if (jsonMatch) {
         console.log('정규식으로 JSON 추출 성공')
         optimizationResults = JSON.parse(jsonMatch[0])
       } else {
         console.log('직접 JSON 파싱 시도')
-        optimizationResults = JSON.parse(content)
+        optimizationResults = JSON.parse(cleanedContent)
       }
       console.log('파싱 성공, 결과 개수:', optimizationResults.length)
     } catch (parseError) {
