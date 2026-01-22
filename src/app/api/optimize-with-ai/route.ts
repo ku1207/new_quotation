@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+// API 라우트 타임아웃 설정 (초 단위)
+export const maxDuration = 60
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()

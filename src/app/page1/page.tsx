@@ -778,6 +778,7 @@ export default function Page1() {
             pcBudget: pcBudgetNum,
             mobileBudget: mobileBudgetNum,
             keywords: parsedData.keywords,
+            optimizationCriterion: optimizationGoal,
           }),
         })
 
