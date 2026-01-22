@@ -796,10 +796,13 @@ export default function Page1() {
         let aiResults: Array<{ keyword: string; device: string; greedyrank: number }> | null = null
         let buffer = ''
 
+        console.log('Streaming 응답 처리 시작...')
+
         while (true) {
           const { done, value } = await reader.read()
 
           if (done) {
+            console.log('Streaming 읽기 완료')
             break
           }
 
@@ -813,22 +816,32 @@ export default function Page1() {
 
               try {
                 const parsed = JSON.parse(data)
+                console.log('Parsed data type:', parsed.type)
 
                 if (parsed.type === 'chunk') {
                   // 진행 상황 표시 (선택사항)
-                  console.log('Streaming chunk received')
+                  // console.log('Streaming chunk received')
                 } else if (parsed.type === 'done') {
                   // 최종 결과 받음
+                  console.log('최종 결과 받음, 결과 개수:', parsed.results?.length)
                   aiResults = parsed.results
                 } else if (parsed.error) {
+                  console.error('서버 에러:', parsed.error)
                   throw new Error(parsed.error)
                 }
               } catch (e) {
                 console.error('Streaming 파싱 오류:', e)
+                console.error('파싱 실패한 데이터:', data.substring(0, 200))
+                // 에러 메시지인 경우 던지기
+                if (data.includes('error')) {
+                  throw new Error('서버에서 에러가 발생했습니다')
+                }
               }
             }
           }
         }
+
+        console.log('aiResults 확인:', aiResults ? `${aiResults.length}개` : 'null')
 
         if (!aiResults) {
           throw new Error('AI 최적화 결과를 받지 못했습니다')
