@@ -768,7 +768,7 @@ export default function Page1() {
         pcResults = optimizeBudgetGreedy(parsedData.keywords, 'PC', pcBudgetNum, optimizationGoal)
         mobileResults = optimizeBudgetGreedy(parsedData.keywords, 'Mobile', mobileBudgetNum, optimizationGoal)
       } else {
-        // AI 기반: Claude API 호출
+        // AI 기반: Claude API 호출 (Streaming)
         const response = await fetch('/api/optimize-with-ai', {
           method: 'POST',
           headers: {
@@ -786,8 +786,53 @@ export default function Page1() {
           throw new Error('AI 최적화 API 호출 실패')
         }
 
-        const data = await response.json()
-        const aiResults: Array<{ keyword: string; device: string; greedyrank: number }> = data.results
+        if (!response.body) {
+          throw new Error('응답 본문이 없습니다')
+        }
+
+        // Streaming 응답 처리
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let aiResults: Array<{ keyword: string; device: string; greedyrank: number }> | null = null
+        let buffer = ''
+
+        while (true) {
+          const { done, value } = await reader.read()
+
+          if (done) {
+            break
+          }
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6)
+
+              try {
+                const parsed = JSON.parse(data)
+
+                if (parsed.type === 'chunk') {
+                  // 진행 상황 표시 (선택사항)
+                  console.log('Streaming chunk received')
+                } else if (parsed.type === 'done') {
+                  // 최종 결과 받음
+                  aiResults = parsed.results
+                } else if (parsed.error) {
+                  throw new Error(parsed.error)
+                }
+              } catch (e) {
+                console.error('Streaming 파싱 오류:', e)
+              }
+            }
+          }
+        }
+
+        if (!aiResults) {
+          throw new Error('AI 최적화 결과를 받지 못했습니다')
+        }
 
         // AI 결과를 OptimizationResult[]로 변환
         pcResults = []

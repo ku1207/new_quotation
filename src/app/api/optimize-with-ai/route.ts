@@ -1,9 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 
 // API 라우트 타임아웃 설정 (초 단위)
 export const maxDuration = 60
 
 export async function POST(request: NextRequest) {
+  const encoder = new TextEncoder()
+
   try {
     const body = await request.json()
     const { pcBudget, mobileBudget, keywords, optimizationCriterion = 'clicks' } = body
@@ -16,14 +18,20 @@ export async function POST(request: NextRequest) {
 
     if (!pcBudget || !mobileBudget || !keywords) {
       console.error('필수 파라미터 누락')
-      return NextResponse.json({ error: '필수 파라미터가 누락되었습니다.' }, { status: 400 })
+      return new Response(
+        JSON.stringify({ error: '필수 파라미터가 누락되었습니다.' }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      )
     }
 
     const apiKey = process.env.ANTHROPIC_API_KEY
 
     if (!apiKey) {
       console.error('ANTHROPIC_API_KEY가 설정되지 않았습니다.')
-      return NextResponse.json({ error: 'API 키가 설정되지 않았습니다.' }, { status: 500 })
+      return new Response(
+        JSON.stringify({ error: 'API 키가 설정되지 않았습니다.' }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      )
     }
 
     // 클릭 최대화 프롬프트
@@ -147,88 +155,152 @@ export async function POST(request: NextRequest) {
 
     console.log('프롬프트 길이:', prompt.length)
 
-    console.log('Claude API 호출 시작...')
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
+    console.log('Claude API 호출 시작 (streaming)...')
+
+    // Streaming response 생성
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': apiKey,
+              'anthropic-version': '2023-06-01',
+            },
+            body: JSON.stringify({
+              model: 'claude-opus-4-5-20251101',
+              max_tokens: 16384,
+              stream: true, // Streaming 모드 활성화
+              messages: [
+                {
+                  role: 'user',
+                  content: prompt,
+                },
+              ],
+            }),
+          })
+
+          console.log('Claude API 응답 상태:', response.status)
+
+          if (!response.ok) {
+            const errorText = await response.text()
+            console.error('Claude API error status:', response.status)
+            console.error('Claude API error:', errorText)
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: 'Claude API 호출 실패' })}\n\n`))
+            controller.close()
+            return
+          }
+
+          if (!response.body) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: '응답 본문이 없습니다' })}\n\n`))
+            controller.close()
+            return
+          }
+
+          const reader = response.body.getReader()
+          const decoder = new TextDecoder()
+          let fullContent = ''
+          let buffer = ''
+
+          while (true) {
+            const { done, value } = await reader.read()
+
+            if (done) {
+              console.log('스트리밍 완료')
+              break
+            }
+
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            buffer = lines.pop() || ''
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6)
+
+                if (data === '[DONE]') {
+                  continue
+                }
+
+                try {
+                  const parsed = JSON.parse(data)
+
+                  if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+                    const text = parsed.delta.text
+                    fullContent += text
+                    // 클라이언트에 진행 상황 전송
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'chunk', content: text })}\n\n`))
+                  }
+                } catch {
+                  // JSON 파싱 실패 무시
+                }
+              }
+            }
+          }
+
+          console.log('전체 응답 길이:', fullContent.length)
+          console.log('원본 응답 미리보기 (처음 200자):', fullContent.substring(0, 200))
+
+          // JSON 파싱
+          try {
+            console.log('JSON 파싱 시작...')
+
+            // 마크다운 코드 블록 제거
+            let cleanedContent = fullContent.trim()
+
+            if (cleanedContent.startsWith('```')) {
+              console.log('마크다운 코드 블록 감지')
+              cleanedContent = cleanedContent.replace(/^```[a-zA-Z]*\n?/, '')
+              console.log('첫 줄(```json, ```JSON, ``` 등) 제거')
+              cleanedContent = cleanedContent.replace(/\n?```\s*$/, '')
+              console.log('마지막 줄(```) 제거')
+              cleanedContent = cleanedContent.trim()
+            }
+
+            // 첫 번째 [ 부터 마지막 ] 까지만 추출
+            const firstBracket = cleanedContent.indexOf('[')
+            const lastBracket = cleanedContent.lastIndexOf(']')
+
+            if (firstBracket === -1 || lastBracket === -1) {
+              throw new Error('JSON 배열을 찾을 수 없습니다')
+            }
+
+            const jsonString = cleanedContent.substring(firstBracket, lastBracket + 1)
+            console.log('JSON 추출 완료, 길이:', jsonString.length)
+
+            const optimizationResults = JSON.parse(jsonString)
+            console.log('파싱 성공, 결과 개수:', optimizationResults.length)
+            console.log('=== API 호출 성공 ===')
+
+            // 최종 결과 전송
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ type: 'done', results: optimizationResults })}\n\n`)
+            )
+          } catch (parseError) {
+            console.error('JSON 파싱 오류:', parseError)
+            console.error('Claude 응답 전체 길이:', fullContent.length)
+            console.error('Claude 응답 미리보기 (처음 500자):', fullContent.substring(0, 500))
+            console.error('Claude 응답 미리보기 (마지막 500자):', fullContent.substring(Math.max(0, fullContent.length - 500)))
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: 'JSON 파싱 실패' })}\n\n`))
+          }
+
+          controller.close()
+        } catch (error) {
+          console.error('스트리밍 오류:', error)
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: '스트리밍 중 오류 발생' })}\n\n`))
+          controller.close()
+        }
       },
-      body: JSON.stringify({
-        model: 'claude-opus-4-5-20251101',
-        max_tokens: 16384, // 키워드가 많을 경우 응답이 길어질 수 있으므로 증가
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-      }),
     })
 
-    console.log('Claude API 응답 상태:', response.status)
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error('Claude API error status:', response.status)
-      console.error('Claude API error:', errorText)
-      return NextResponse.json({ error: 'Claude API 호출 실패' }, { status: 500 })
-    }
-
-    const data = await response.json()
-    console.log('Claude API 응답 받음')
-    const content = data.content[0].text
-    console.log('응답 내용 길이:', content.length)
-
-    // JSON 파싱
-    let optimizationResults: Array<{ keyword: string; device: string; greedyrank: number }>
-    try {
-      console.log('JSON 파싱 시작...')
-      console.log('원본 응답 미리보기 (처음 200자):', content.substring(0, 200))
-
-      // 마크다운 코드 블록 제거
-      let cleanedContent = content.trim()
-
-      // ```json, ```JSON, ``` 로 감싸진 경우 제거
-      if (cleanedContent.startsWith('```')) {
-        console.log('마크다운 코드 블록 감지')
-
-        // ```json, ```JSON, ``` 등 첫 줄 제거
-        cleanedContent = cleanedContent.replace(/^```[a-zA-Z]*\n?/, '')
-        console.log('첫 줄(```json, ```JSON, ``` 등) 제거')
-
-        // 마지막 줄의 ``` 제거
-        cleanedContent = cleanedContent.replace(/\n?```\s*$/, '')
-        console.log('마지막 줄(```) 제거')
-
-        cleanedContent = cleanedContent.trim()
-      }
-
-      // 첫 번째 [ 부터 마지막 ] 까지만 추출
-      const firstBracket = cleanedContent.indexOf('[')
-      const lastBracket = cleanedContent.lastIndexOf(']')
-
-      if (firstBracket === -1 || lastBracket === -1) {
-        throw new Error('JSON 배열을 찾을 수 없습니다')
-      }
-
-      const jsonString = cleanedContent.substring(firstBracket, lastBracket + 1)
-      console.log('JSON 추출 완료, 길이:', jsonString.length)
-      console.log('JSON 미리보기 (처음 200자):', jsonString.substring(0, 200))
-
-      optimizationResults = JSON.parse(jsonString)
-      console.log('파싱 성공, 결과 개수:', optimizationResults.length)
-    } catch (parseError) {
-      console.error('JSON 파싱 오류:', parseError)
-      console.error('Claude 응답 전체 길이:', content.length)
-      console.error('Claude 응답 미리보기 (처음 500자):', content.substring(0, 500))
-      console.error('Claude 응답 미리보기 (마지막 500자):', content.substring(Math.max(0, content.length - 500)))
-      return NextResponse.json({ error: 'JSON 파싱 실패' }, { status: 500 })
-    }
-
-    console.log('=== API 호출 성공 ===')
-    return NextResponse.json({ results: optimizationResults })
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    })
   } catch (error) {
     console.error('=== AI 최적화 오류 ===')
     console.error('에러 타입:', typeof error)
@@ -236,6 +308,9 @@ export async function POST(request: NextRequest) {
     if (error instanceof Error) {
       console.error('에러 스택:', error.stack)
     }
-    return NextResponse.json({ error: 'AI 최적화 중 오류가 발생했습니다.' }, { status: 500 })
+    return new Response(
+      JSON.stringify({ error: 'AI 최적화 중 오류가 발생했습니다.' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
   }
 }
