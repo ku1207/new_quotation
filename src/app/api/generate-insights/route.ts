@@ -35,16 +35,16 @@ ${JSON.stringify(body, null, 2)}
 
 ## 제약 사항
 - 알고리즘(LPS 등), 분석 가이드라인에 대한 기술적 설명은 배제하고, 오직 '비즈니스 인사이트'와 '실행 전략'에만 집중하세요.
-- 모든 답변은 데이터에 기반한 수치적 근거를 포함해야 하며, 1~2문장의 간결하고 임팩트 있는 문체로 작성하세요.
+- 모든 답변은 데이터에 기반한 수치적 근거를 포함해야 하며, 단일 문장을 여러 개로 나눠서 작성하세요. 단일 문장들로 구성한 배열을 구성하십시오.
 - 결과물은 반드시 아래 지정된 JSON 형식만 출력하며, 외부 텍스트는 일절 금지합니다.
 
 ## 출력 형태 (JSON Only)
 {
-  "budget_efficiency": "...",
-  "channel_strategy": "...",
-  "core_keywords": "...",
-  "downgrade_pattern": "...",
-  "action_items": "..."
+  "budget_efficiency": ["..."],
+  "channel_strategy": ["..."],
+  "core_keywords": ["..."],
+  "downgrade_pattern": ["..."],
+  "action_items": ["..."]
 }`
 
     const message = await anthropic.messages.create({
