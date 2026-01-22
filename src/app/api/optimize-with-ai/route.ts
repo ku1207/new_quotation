@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         model: 'claude-opus-4-5-20251101',
-        max_tokens: 8192,
+        max_tokens: 16384, // 키워드가 많을 경우 응답이 길어질 수 있으므로 증가
         messages: [
           {
             role: 'user',
