@@ -112,11 +112,11 @@ interface OptimizationResult {
 }
 
 interface BudgetInsights {
-  budget_efficiency: string
-  channel_strategy: string
-  core_keywords: string
-  downgrade_pattern: string
-  action_items: string
+  budget_efficiency: string[]
+  channel_strategy: string[]
+  core_keywords: string[]
+  downgrade_pattern: string[]
+  action_items: string[]
 }
 
 export default function Page1() {
@@ -840,11 +840,11 @@ export default function Page1() {
       } else {
         // AI 인사이트 생성 실패 시 기본 메시지 설정
         setBudgetInsights({
-          budget_efficiency: '인사이트 생성에 실패했습니다.',
-          channel_strategy: '인사이트 생성에 실패했습니다.',
-          core_keywords: '인사이트 생성에 실패했습니다.',
-          downgrade_pattern: '인사이트 생성에 실패했습니다.',
-          action_items: '인사이트 생성에 실패했습니다.',
+          budget_efficiency: ['인사이트 생성에 실패했습니다.'],
+          channel_strategy: ['인사이트 생성에 실패했습니다.'],
+          core_keywords: ['인사이트 생성에 실패했습니다.'],
+          downgrade_pattern: ['인사이트 생성에 실패했습니다.'],
+          action_items: ['인사이트 생성에 실패했습니다.'],
         })
         toast.warning('인사이트 생성에 실패했습니다. (분석 결과는 정상적으로 생성되었습니다)')
         toast.success('예산 기반 분석이 완료되었습니다.')
@@ -1145,19 +1145,29 @@ export default function Page1() {
         sheet1Data.push(['인사이트'])
         sheet1Data.push([])
         sheet1Data.push(['예산 효율성 평가'])
-        sheet1Data.push([budgetInsights.budget_efficiency])
+        for (const item of budgetInsights.budget_efficiency) {
+          sheet1Data.push([`- ${item}`])
+        }
         sheet1Data.push([])
         sheet1Data.push(['매체별 전략 방향'])
-        sheet1Data.push([budgetInsights.channel_strategy])
+        for (const item of budgetInsights.channel_strategy) {
+          sheet1Data.push([`- ${item}`])
+        }
         sheet1Data.push([])
         sheet1Data.push(['핵심 키워드 분석'])
-        sheet1Data.push([budgetInsights.core_keywords])
+        for (const item of budgetInsights.core_keywords) {
+          sheet1Data.push([`- ${item}`])
+        }
         sheet1Data.push([])
         sheet1Data.push(['최적화 전략'])
-        sheet1Data.push([budgetInsights.downgrade_pattern])
+        for (const item of budgetInsights.downgrade_pattern) {
+          sheet1Data.push([`- ${item}`])
+        }
         sheet1Data.push([])
         sheet1Data.push(['운영 전략 제안'])
-        sheet1Data.push([budgetInsights.action_items])
+        for (const item of budgetInsights.action_items) {
+          sheet1Data.push([`- ${item}`])
+        }
       } else {
         sheet1Data.push(['인사이트'])
         sheet1Data.push(['인사이트 생성에 실패했습니다.'])
