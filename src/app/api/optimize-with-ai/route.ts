@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+// API 라우트 타임아웃 설정 (초 단위)
+export const maxDuration = 60
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -182,19 +185,50 @@ export async function POST(request: NextRequest) {
     let optimizationResults: Array<{ keyword: string; device: string; greedyrank: number }>
     try {
       console.log('JSON 파싱 시작...')
-      // Claude의 응답에서 JSON 부분만 추출 (마크다운 코드 블록이 있을 수 있음)
-      const jsonMatch = content.match(/\[[\s\S]*\]/)
-      if (jsonMatch) {
-        console.log('정규식으로 JSON 추출 성공')
-        optimizationResults = JSON.parse(jsonMatch[0])
-      } else {
-        console.log('직접 JSON 파싱 시도')
-        optimizationResults = JSON.parse(content)
+      console.log('원본 응답 미리보기 (처음 200자):', content.substring(0, 200))
+
+      // 마크다운 코드 블록 제거
+      let cleanedContent = content.trim()
+
+      // ```json 또는 ``` 로 감싸진 경우 제거
+      if (cleanedContent.startsWith('```')) {
+        console.log('마크다운 코드 블록 감지')
+        const lines = cleanedContent.split('\n')
+
+        // 첫 줄 제거 (```json 또는 ```)
+        if (lines[0].startsWith('```')) {
+          lines.shift()
+          console.log('첫 줄(```) 제거')
+        }
+
+        // 마지막 줄이 ```인 경우 제거
+        if (lines.length > 0 && lines[lines.length - 1].trim() === '```') {
+          lines.pop()
+          console.log('마지막 줄(```) 제거')
+        }
+
+        cleanedContent = lines.join('\n').trim()
       }
+
+      // 첫 번째 [ 부터 마지막 ] 까지만 추출
+      const firstBracket = cleanedContent.indexOf('[')
+      const lastBracket = cleanedContent.lastIndexOf(']')
+
+      if (firstBracket === -1 || lastBracket === -1) {
+        throw new Error('JSON 배열을 찾을 수 없습니다')
+      }
+
+      const jsonString = cleanedContent.substring(firstBracket, lastBracket + 1)
+      console.log('JSON 추출 완료, 길이:', jsonString.length)
+      console.log('JSON 미리보기 (처음 200자):', jsonString.substring(0, 200))
+
+      optimizationResults = JSON.parse(jsonString)
       console.log('파싱 성공, 결과 개수:', optimizationResults.length)
     } catch (parseError) {
       console.error('JSON 파싱 오류:', parseError)
-      console.error('Claude 응답:', content)
+      console.error('Claude 응답 전체 길이:', content.length)
+      console.error('Claude 응답 미리보기 (처음 500자):', content.substring(0, 500))
+      console.error('Claude 응답 미리보기 (마지막 500자):', content.substring(Math.max(0, content.length - 500)))
       return NextResponse.json({ error: 'JSON 파싱 실패' }, { status: 500 })
     }
 
