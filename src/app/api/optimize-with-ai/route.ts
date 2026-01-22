@@ -5,7 +5,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { pcBudget, mobileBudget, keywords, optimizationCriterion = 'clicks' } = body
 
+    console.log('=== API 호출 시작 ===')
+    console.log('optimizationCriterion:', optimizationCriterion)
+    console.log('pcBudget:', pcBudget)
+    console.log('mobileBudget:', mobileBudget)
+    console.log('keywords 개수:', keywords?.length)
+
     if (!pcBudget || !mobileBudget || !keywords) {
+      console.error('필수 파라미터 누락')
       return NextResponse.json({ error: '필수 파라미터가 누락되었습니다.' }, { status: 400 })
     }
 
@@ -128,12 +135,16 @@ export async function POST(request: NextRequest) {
     // optimizationCriterion에 따라 적절한 프롬프트 선택
     let prompt: string
     if (optimizationCriterion === 'impressions' || optimizationCriterion === '노출 최대화') {
+      console.log('노출 최대화 프롬프트 사용')
       prompt = impressionsPrompt
     } else {
-      // 기본값은 clicks (클릭 최대화)
+      console.log('클릭 최대화 프롬프트 사용')
       prompt = clicksPrompt
     }
 
+    console.log('프롬프트 길이:', prompt.length)
+
+    console.log('Claude API 호출 시작...')
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -153,34 +164,49 @@ export async function POST(request: NextRequest) {
       }),
     })
 
+    console.log('Claude API 응답 상태:', response.status)
+
     if (!response.ok) {
       const errorText = await response.text()
+      console.error('Claude API error status:', response.status)
       console.error('Claude API error:', errorText)
       return NextResponse.json({ error: 'Claude API 호출 실패' }, { status: 500 })
     }
 
     const data = await response.json()
+    console.log('Claude API 응답 받음')
     const content = data.content[0].text
+    console.log('응답 내용 길이:', content.length)
 
     // JSON 파싱
     let optimizationResults: Array<{ keyword: string; device: string; greedyrank: number }>
     try {
+      console.log('JSON 파싱 시작...')
       // Claude의 응답에서 JSON 부분만 추출 (마크다운 코드 블록이 있을 수 있음)
       const jsonMatch = content.match(/\[[\s\S]*\]/)
       if (jsonMatch) {
+        console.log('정규식으로 JSON 추출 성공')
         optimizationResults = JSON.parse(jsonMatch[0])
       } else {
+        console.log('직접 JSON 파싱 시도')
         optimizationResults = JSON.parse(content)
       }
+      console.log('파싱 성공, 결과 개수:', optimizationResults.length)
     } catch (parseError) {
       console.error('JSON 파싱 오류:', parseError)
       console.error('Claude 응답:', content)
       return NextResponse.json({ error: 'JSON 파싱 실패' }, { status: 500 })
     }
 
+    console.log('=== API 호출 성공 ===')
     return NextResponse.json({ results: optimizationResults })
   } catch (error) {
-    console.error('AI 최적화 오류:', error)
+    console.error('=== AI 최적화 오류 ===')
+    console.error('에러 타입:', typeof error)
+    console.error('에러 메시지:', error)
+    if (error instanceof Error) {
+      console.error('에러 스택:', error.stack)
+    }
     return NextResponse.json({ error: 'AI 최적화 중 오류가 발생했습니다.' }, { status: 500 })
   }
 }
