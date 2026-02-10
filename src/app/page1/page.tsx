@@ -114,8 +114,6 @@ interface OptimizationResult {
 interface BudgetInsights {
   budget_efficiency: string[]
   channel_strategy: string[]
-  core_keywords: string[]
-  downgrade_pattern: string[]
   action_items: string[]
 }
 
@@ -888,8 +886,6 @@ export default function Page1() {
         setBudgetInsights({
           budget_efficiency: ['인사이트 생성에 실패했습니다.'],
           channel_strategy: ['인사이트 생성에 실패했습니다.'],
-          core_keywords: ['인사이트 생성에 실패했습니다.'],
-          downgrade_pattern: ['인사이트 생성에 실패했습니다.'],
           action_items: ['인사이트 생성에 실패했습니다.'],
         })
         toast.warning('인사이트 생성에 실패했습니다. (분석 결과는 정상적으로 생성되었습니다)')
@@ -1197,16 +1193,6 @@ export default function Page1() {
         sheet1Data.push([])
         sheet1Data.push(['매체별 전략 방향'])
         for (const item of budgetInsights.channel_strategy) {
-          sheet1Data.push([`- ${item}`])
-        }
-        sheet1Data.push([])
-        sheet1Data.push(['핵심 키워드 분석'])
-        for (const item of budgetInsights.core_keywords) {
-          sheet1Data.push([`- ${item}`])
-        }
-        sheet1Data.push([])
-        sheet1Data.push(['최적화 전략'])
-        for (const item of budgetInsights.downgrade_pattern) {
           sheet1Data.push([`- ${item}`])
         }
         sheet1Data.push([])
