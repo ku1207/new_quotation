@@ -5,6 +5,13 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
+    // 입력 데이터 로깅
+    console.log('='.repeat(80))
+    console.log('📊 API 요청 데이터 (Insights 생성)')
+    console.log('='.repeat(80))
+    console.log(JSON.stringify(body, null, 2))
+    console.log('='.repeat(80))
+
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey || apiKey === 'your_api_key_here') {
       return NextResponse.json(
@@ -46,6 +53,13 @@ ${JSON.stringify(body, null, 2)}
   "channel_strategy": ["..."],
   "action_items": ["..."]
 }`
+
+    // Prompt 내용 로깅
+    console.log('\n' + '='.repeat(80))
+    console.log('🤖 Claude API에 전송될 Prompt')
+    console.log('='.repeat(80))
+    console.log(prompt)
+    console.log('='.repeat(80) + '\n')
 
     const message = await anthropic.messages.create({
       model: 'claude-opus-4-5-20251101',
