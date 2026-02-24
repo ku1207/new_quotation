@@ -124,8 +124,7 @@ export default function Page1() {
   const [mobileRank, setMobileRank] = useState<string>('')
   const [pcBudget, setPcBudget] = useState<string>('')
   const [mobileBudget, setMobileBudget] = useState<string>('')
-  const [optimizationGoal, setOptimizationGoal] = useState<'clicks' | 'impressions'>('clicks')
-  const [optimizationMethod, setOptimizationMethod] = useState<'logic' | 'ai'>('logic')
+  const [optimizationGoal, setOptimizationGoal] = useState<'clicks' | 'impressions' | 'cpc'>('clicks')
   const [parsedData, setParsedData] = useState<ParsedData | null>(null)
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -636,6 +635,131 @@ export default function Page1() {
     return results
   }
 
+  // CPC 최소화 알고리즘 (Greedy Upgrade: 최하위 순위에서 시작하여 예산 내에서 한 단계씩 올림)
+  const optimizeBudgetCPC = (
+    keywords: KeywordData[],
+    device: 'PC' | 'Mobile',
+    budget: number
+  ): OptimizationResult[] => {
+    const maxRank = device === 'PC' ? 10 : 5
+
+    // 1. 모든 키워드를 최하위 순위(maxRank)에서 시작
+    const currentRanks: Record<string, number> = {}
+    keywords.forEach((kw) => {
+      currentRanks[kw.keyword] = maxRank
+    })
+
+    // 현재 총 비용 계산 함수
+    const calculateTotalCost = (): number => {
+      let total = 0
+      for (const kw of keywords) {
+        const rank = currentRanks[kw.keyword]
+        const deviceData = device === 'PC' ? kw.PC : kw.Mobile
+        const data = deviceData.find((d) => d.rank === rank)
+        if (data) total += data.cost
+      }
+      return total
+    }
+
+    // 2. 예산 이내에서 iCPC가 가장 낮은 키워드를 한 단계씩 업그레이드 반복
+    while (true) {
+      const currentTotalCost = calculateTotalCost()
+
+      // 한 단계 위로 올릴 수 있는 후보군 추출 및 iCPC 계산
+      const candidates: Array<{
+        keyword: string
+        fromRank: number
+        toRank: number
+        extraCost: number
+        extraClicks: number
+        iCPC: number
+        currentCPC: number
+      }> = []
+
+      for (const kw of keywords) {
+        const currentRank = currentRanks[kw.keyword]
+        if (currentRank <= 1) continue // 이미 최상위 순위
+
+        const deviceData = device === 'PC' ? kw.PC : kw.Mobile
+        const currentData = deviceData.find((d) => d.rank === currentRank)
+        const upperData = deviceData.find((d) => d.rank === currentRank - 1)
+
+        if (!currentData || !upperData) continue
+
+        const extraCost = upperData.cost - currentData.cost
+        const extraClicks = upperData.clicks - currentData.clicks
+
+        // 업그레이드 후 예산 초과 여부 확인 (예산을 초과하면 후보에서 제외)
+        if (currentTotalCost + extraCost > budget) continue
+
+        // 한계 CPC(iCPC) = 추가 비용 / 추가 클릭
+        let iCPC: number
+        if (extraClicks <= 0) {
+          // 클릭 증가가 없거나 오히려 감소하는 경우: iCPC를 무한대로 설정
+          iCPC = extraCost > 0 ? Infinity : 0
+        } else {
+          iCPC = extraCost / extraClicks
+        }
+
+        const currentCPC = currentData.clicks > 0 ? currentData.cost / currentData.clicks : 0
+
+        candidates.push({
+          keyword: kw.keyword,
+          fromRank: currentRank,
+          toRank: currentRank - 1,
+          extraCost,
+          extraClicks,
+          iCPC,
+          currentCPC,
+        })
+      }
+
+      if (candidates.length === 0) break // 더 이상 업그레이드 불가능
+
+      // 정렬: 1순위 iCPC 낮은 순, 2순위 추가 클릭량 많은 순, 3순위 현재 CPC 낮은 순
+      candidates.sort((a, b) => {
+        // 1. iCPC 낮은 순
+        if (a.iCPC === Infinity && b.iCPC === Infinity) {
+          // 둘 다 무한대면 2, 3순위로 판단
+        } else if (a.iCPC === Infinity) return 1
+        else if (b.iCPC === Infinity) return -1
+        else if (Math.abs(a.iCPC - b.iCPC) > 0.0001) return a.iCPC - b.iCPC
+
+        // 2. 추가 클릭량 많은 순
+        if (a.extraClicks !== b.extraClicks) return b.extraClicks - a.extraClicks
+
+        // 3. 현재 CPC 낮은 순
+        return a.currentCPC - b.currentCPC
+      })
+
+      // 가장 효율적인 후보를 한 단계 업그레이드
+      const best = candidates[0]
+      currentRanks[best.keyword] = best.toRank
+    }
+
+    // 최종 결과 생성
+    const results: OptimizationResult[] = []
+    for (const kw of keywords) {
+      const optimalRank = currentRanks[kw.keyword]
+      const deviceData = device === 'PC' ? kw.PC : kw.Mobile
+      const data = deviceData.find((d) => d.rank === optimalRank)
+
+      if (data) {
+        results.push({
+          keyword: kw.keyword,
+          optimalRank,
+          impr: data.impr,
+          clicks: data.clicks,
+          ctr: data.impr > 0 ? (data.clicks / data.impr) * 100 : 0,
+          cpc: data.clicks > 0 ? Math.round(data.cost / data.clicks) : 0,
+          cost: data.cost,
+        })
+      }
+    }
+
+    return results
+  }
+
   // Claude API 호출하여 인사이트 생성
   const generateInsights = async (
     pcResults: OptimizationResult[],
@@ -761,116 +885,14 @@ export default function Page1() {
       let pcResults: OptimizationResult[]
       let mobileResults: OptimizationResult[]
 
-      if (optimizationMethod === 'logic') {
-        // 로직 기반: Greedy Downgrade 알고리즘 실행 (선택된 최적화 기준 적용)
+      if (optimizationGoal === 'cpc') {
+        // CPC 최소화: Greedy Upgrade 알고리즘 실행
+        pcResults = optimizeBudgetCPC(parsedData.keywords, 'PC', pcBudgetNum)
+        mobileResults = optimizeBudgetCPC(parsedData.keywords, 'Mobile', mobileBudgetNum)
+      } else {
+        // 클릭/노출 최대화: Greedy Downgrade 알고리즘 실행
         pcResults = optimizeBudgetGreedy(parsedData.keywords, 'PC', pcBudgetNum, optimizationGoal)
         mobileResults = optimizeBudgetGreedy(parsedData.keywords, 'Mobile', mobileBudgetNum, optimizationGoal)
-      } else {
-        // AI 기반: Claude API 호출 (Streaming)
-        const response = await fetch('/api/optimize-with-ai', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            pcBudget: pcBudgetNum,
-            mobileBudget: mobileBudgetNum,
-            keywords: parsedData.keywords,
-            optimizationCriterion: optimizationGoal,
-          }),
-        })
-
-        if (!response.ok) {
-          throw new Error('AI 최적화 API 호출 실패')
-        }
-
-        if (!response.body) {
-          throw new Error('응답 본문이 없습니다')
-        }
-
-        // Streaming 응답 처리
-        const reader = response.body.getReader()
-        const decoder = new TextDecoder()
-        let aiResults: Array<{ keyword: string; device: string; greedyrank: number }> | null = null
-        let buffer = ''
-
-        while (true) {
-          const { done, value } = await reader.read()
-
-          if (done) {
-            break
-          }
-
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop() || ''
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6)
-
-              try {
-                const parsed = JSON.parse(data)
-
-                if (parsed.type === 'chunk') {
-                  // 진행 상황 표시 (선택사항)
-                  console.log('Streaming chunk received')
-                } else if (parsed.type === 'done') {
-                  // 최종 결과 받음
-                  aiResults = parsed.results
-                } else if (parsed.error) {
-                  throw new Error(parsed.error)
-                }
-              } catch (e) {
-                console.error('Streaming 파싱 오류:', e)
-              }
-            }
-          }
-        }
-
-        if (!aiResults) {
-          throw new Error('AI 최적화 결과를 받지 못했습니다')
-        }
-
-        // AI 결과를 OptimizationResult[]로 변환
-        pcResults = []
-        mobileResults = []
-
-        for (const kw of parsedData.keywords) {
-          // PC 결과 찾기
-          const pcAI = aiResults.find((r) => r.keyword === kw.keyword && r.device === 'PC')
-          if (pcAI) {
-            const pcData = kw.PC.find((d) => d.rank === pcAI.greedyrank)
-            if (pcData) {
-              pcResults.push({
-                keyword: kw.keyword,
-                optimalRank: pcAI.greedyrank,
-                impr: pcData.impr,
-                clicks: pcData.clicks,
-                ctr: pcData.impr > 0 ? (pcData.clicks / pcData.impr) * 100 : 0,
-                cpc: pcData.clicks > 0 ? Math.round(pcData.cost / pcData.clicks) : 0,
-                cost: pcData.cost,
-              })
-            }
-          }
-
-          // Mobile 결과 찾기
-          const mobileAI = aiResults.find((r) => r.keyword === kw.keyword && r.device === 'Mobile')
-          if (mobileAI) {
-            const mobileData = kw.Mobile.find((d) => d.rank === mobileAI.greedyrank)
-            if (mobileData) {
-              mobileResults.push({
-                keyword: kw.keyword,
-                optimalRank: mobileAI.greedyrank,
-                impr: mobileData.impr,
-                clicks: mobileData.clicks,
-                ctr: mobileData.impr > 0 ? (mobileData.clicks / mobileData.impr) * 100 : 0,
-                cpc: mobileData.clicks > 0 ? Math.round(mobileData.cost / mobileData.clicks) : 0,
-                cost: mobileData.cost,
-              })
-            }
-          }
-        }
       }
 
       setPcOptimizationResult(pcResults)
@@ -1843,32 +1865,15 @@ export default function Page1() {
                         >
                           노출 최대화
                         </button>
-                      </div>
-                    </div>
-
-                    {/* 최적화 방식 선택 버튼 */}
-                    <div>
-                      <label className="block text-sm font-medium mb-2">최적화 방식</label>
-                      <div className="flex gap-2">
                         <button
-                          onClick={() => setOptimizationMethod('logic')}
+                          onClick={() => setOptimizationGoal('cpc')}
                           className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
-                            optimizationMethod === 'logic'
+                            optimizationGoal === 'cpc'
                               ? 'bg-indigo-600 text-white shadow-md'
                               : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
                           }`}
                         >
-                          로직 기반
-                        </button>
-                        <button
-                          onClick={() => setOptimizationMethod('ai')}
-                          className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
-                            optimizationMethod === 'ai'
-                              ? 'bg-indigo-600 text-white shadow-md'
-                              : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
-                          }`}
-                        >
-                          AI 기반
+                          CPC 최소화
                         </button>
                       </div>
                     </div>
